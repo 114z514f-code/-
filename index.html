@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>饮食追踪系统 Max - PWA</title>
+    
+    <!-- PWA 核心配置：允许安装到桌面，全屏运行 -->
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="#3b82f6">
+    <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzNiODJmNiIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjYwIj7imqE8L3RleHQ+PC9zdmc+">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <!-- 稳定国内 CDN -->
+    <script src="https://cdn.staticfile.net/vue/3.3.4/vue.global.prod.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.staticfile.net/Chart.js/4.3.0/chart.umd.min.js"></script>
+    <script src="https://cdn.staticfile.net/lz-string/1.5.0/lz-string.min.js"></script>
+    
+    <style>
+        [v-cloak] { display: none; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 10px; }
+        .modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
+        .modal-enter-from, .modal-leave-to { opacity: 0; }
+        body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+        input, select { -webkit-appearance: none; appearance: none; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 p-3 md:p-8 font-sans pb-24 select-none">
+    <div id="app" v-cloak class="max-w-6xl mx-auto space-y-4 relative">
+        
+        <!-- 模块1：顶栏 -->
+        <div class="flex flex-col bg-white p-4 rounded-xl shadow-sm border border-gray-200 gap-3">
+            <div class="flex justify-between items-center">
+                <h1 class="text-xl font-bold text-gray-800 flex items-center">
+                    <span class="text-blue-500 mr-2">⚡</span> Diet Max
+                </h1>
+                <div class="flex gap-2">
+                    <button @click="openWeeklyReport" class="bg-orange-50 text-orange-600 border border-orange-200 px-2 py-1 rounded text-xs font-bold hover:bg-orange-100 flex items-center">
+                        📅 周报
+                    </button>
+                    <button @click="openChart" class="bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-1 rounded text-xs font-bold hover:bg-indigo-100 flex items-center">
+                        📊 趋势
+                    </button>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="flex items-center bg-blue-50 px-2 py-1.5 rounded-lg border border-blue-100 flex-1">
+                    <span class="text-blue-600 mr-1 text-xs font-bold">体重(kg)</span>
+                    <input type="number" step="0.1" v-model="currentLog.weight" class="bg-transparent w-full font-black text-blue-700 focus:outline-none" @change="saveData">
+                </div>
+                <input type="date" v-model="currentDate" class="border border-gray-200 px-2 py-1.5 rounded-lg focus:outline-none text-sm font-medium flex-1">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <!-- 左侧：日常记录 -->
+            <div class="lg:col-span-2 space-y-4">
+                
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <div class="flex flex-col gap-3 mb-4">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h2 class="text-base font-bold text-gray-700">🚀 今日模式</h2>
+                                <p class="text-xs text-gray-500 mt-0.5" v-if="currentLog.templateName">
+                                    当前: <span class="font-bold text-blue-500">{{ currentLog.templateName }}</span>
+                                </p>
+                            </div>
+                            <button @click="showTemplateModal = true" class="bg-gray-100 text-gray-700 border border-gray-200 px-2 py-1 rounded-lg text-xs font-bold">
+                                ⚙️ 管理模板
+                            </button>
+                        </div>
+                        <div class="flex gap-2 overflow-x-auto pb-1">
+                            <button v-for="(tpl, tName) in templates" :key="tName" @click="applyTemplate(tName)" 
+                                    class="bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm whitespace-nowrap flex-shrink-0">
+                                应用 {{ tName }}
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div v-for="(val, key) in dailyTotal" :key="key" class="p-2 bg-gray-50 rounded-lg border border-gray-100">
+                            <div class="flex justify-between items-end mb-1">
+                                <span class="text-gray-500 text-xs font-medium">{{ labels[key] }}</span>
+                                <span class="text-sm font-black">{{ val.toFixed(0) }}<span class="text-[10px] text-gray-400 font-normal">/{{ targets[key] }}</span></span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-1.5">
+                                <div :class="['h-1.5 rounded-full', progressBarColor(val, targets[key])]" 
+                                     :style="{ width: Math.min((val / (targets[key]||1)) * 100, 100) + '%' }"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-base font-bold text-gray-700">🍽️ 详细餐次打卡</h2>
+                        <button @click="addMeal" class="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-lg font-semibold">
+                            + 临时加餐
+                        </button>
+                    </div>
+                    <div v-if="currentLog.meals.length === 0" class="text-center py-6 text-gray-400 text-xs border-2 border-dashed rounded-xl bg-gray-50">
+                        请在上方应用模板或加餐。
+                    </div>
+                    <div v-for="(meal, mIndex) in currentLog.meals" :key="mIndex" class="mb-4 border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                        <div class="bg-gray-50 p-2 border-b border-gray-200">
+                            <div class="flex justify-between items-center mb-2">
+                                <input v-model="meal.name" class="font-bold text-base text-gray-700 bg-transparent focus:outline-none w-24" @change="saveData">
+                                <button @click="removeMeal(mIndex)" class="text-red-400 text-xs">删除此餐</button>
+                            </div>
+                            <div class="grid grid-cols-3 gap-2 text-[10px] font-bold text-gray-600">
+                                <div>
+                                    <div class="flex justify-between mb-0.5"><span>P</span> <span>{{ getMealTotals(meal).p.toFixed(0) }}/{{meal.target.p}}</span></div>
+                                    <div class="w-full bg-gray-200 h-1 rounded-full"><div :class="['h-1 rounded-full', progressBarColor(getMealTotals(meal).p, meal.target.p)]" :style="{width: Math.min((getMealTotals(meal).p/(meal.target.p||1))*100, 100)+'%'}"></div></div>
+                                </div>
+                                <div>
+                                    <div class="flex justify-between mb-0.5"><span>C</span> <span>{{ getMealTotals(meal).c.toFixed(0) }}/{{meal.target.c}}</span></div>
+                                    <div class="w-full bg-gray-200 h-1 rounded-full"><div :class="['h-1 rounded-full', progressBarColor(getMealTotals(meal).c, meal.target.c)]" :style="{width: Math.min((getMealTotals(meal).c/(meal.target.c||1))*100, 100)+'%'}"></div></div>
+                                </div>
+                                <div>
+                                    <div class="flex justify-between mb-0.5"><span>F</span> <span>{{ getMealTotals(meal).f.toFixed(0) }}/{{meal.target.f}}</span></div>
+                                    <div class="w-full bg-gray-200 h-1 rounded-full"><div :class="['h-1 rounded-full', progressBarColor(getMealTotals(meal).f, meal.target.f)]" :style="{width: Math.min((getMealTotals(meal).f/(meal.target.f||1))*100, 100)+'%'}"></div></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-2 bg-white space-y-2">
+                            <div v-for="(item, iIndex) in meal.items" :key="iIndex" class="flex flex-col gap-1 text-sm bg-gray-50 p-2 rounded">
+                                <div class="flex justify-between items-center gap-2">
+                                    <select v-model="item.food" class="border border-gray-200 p-1.5 rounded flex-grow text-xs bg-white" @change="saveData">
+                                        <option disabled value="">选择食物</option>
+                                        <option v-for="(f, fname) in foods" :value="fname">{{ fname }}</option>
+                                    </select>
+                                    <div class="flex items-center bg-white border border-gray-200 rounded">
+                                        <input type="number" step="0.1" v-model="item.amount" placeholder="量" class="p-1.5 w-16 text-center text-xs focus:outline-none bg-transparent" @input="saveData"> 
+                                        <span class="text-gray-500 text-[10px] w-6 text-center border-l border-gray-100">{{ foods[item.food] ? (foods[item.food].unit === '1个' ? '个' : '百克') : '' }}</span>
+                                    </div>
+                                    <button @click="removeFood(mIndex, iIndex)" class="text-red-400 px-2 py-1 text-lg font-bold">&times;</button>
+                                </div>
+                                <div class="text-gray-500 font-medium text-[10px] text-right">
+                                    {{ getFoodMacros(item) }}
+                                </div>
+                            </div>
+                            <button @click="addFood(mIndex)" class="text-blue-500 text-xs font-bold mt-1 w-full text-center py-2 border border-dashed border-blue-200 rounded">
+                                + 录入食物
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧列：数据导出与管理 -->
+            <div class="space-y-4">
+                
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-blue-200 relative overflow-hidden">
+                    <h2 class="text-base font-bold text-gray-700 mb-3 flex items-center"><span class="mr-1">💾</span> 极速数据备份</h2>
+                    <div class="space-y-2">
+                        <button @click="copyDataToClipboard" class="w-full bg-indigo-500 text-white py-2.5 rounded-lg text-sm font-bold active:bg-indigo-600 flex justify-center items-center gap-1 shadow-sm">
+                            <span>📋</span> 复制压缩备份代码
+                        </button>
+                        <button @click="importFromClipboard" class="w-full bg-white border border-indigo-200 text-indigo-600 py-2 rounded-lg text-xs font-bold active:bg-indigo-50 flex justify-center items-center gap-1">
+                            <span>📥</span> 导入备份代码
+                        </button>
+                        <div class="border-t border-gray-100 my-2"></div>
+                        <button @click="mobileExportCSV" class="w-full bg-green-500 text-white py-2.5 rounded-lg text-sm font-bold active:bg-green-600 flex justify-center items-center gap-1 shadow-sm">
+                            <span>📊</span> 导出 Excel (.csv)
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <h2 class="text-base font-bold text-gray-700 mb-3">📝 食物库管理</h2>
+                    <div class="bg-blue-50 p-2 rounded-lg border border-blue-100 space-y-2 mb-3">
+                        <input v-model="newFood.name" placeholder="食物名称" class="w-full text-sm p-1.5 border border-white rounded focus:outline-none">
+                        <div class="grid grid-cols-3 gap-1">
+                            <input type="number" v-model="newFood.protein" placeholder="蛋白g" class="w-full text-xs p-1.5 border border-white rounded focus:outline-none text-center">
+                            <input type="number" v-model="newFood.carbs" placeholder="碳水g" class="w-full text-xs p-1.5 border border-white rounded focus:outline-none text-center">
+                            <input type="number" v-model="newFood.fat" placeholder="脂肪g" class="w-full text-xs p-1.5 border border-white rounded focus:outline-none text-center">
+                        </div>
+                        <div class="flex gap-2">
+                            <select v-model="newFood.unit" class="w-1/2 text-xs p-1.5 border border-white rounded focus:outline-none">
+                                <option value="100g">每 100 克</option>
+                                <option value="1个">每 1 个</option>
+                            </select>
+                            <button @click="addNewFood" class="w-1/2 bg-blue-500 text-white text-xs font-bold rounded active:bg-blue-600">添加</button>
+                        </div>
+                    </div>
+                    <div class="max-h-48 overflow-y-auto space-y-1 pr-1">
+                        <div v-for="(f, fname) in foods" :key="fname" class="flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-100">
+                            <div>
+                                <span class="font-bold text-gray-700 text-sm">{{ fname }}</span>
+                                <span class="text-gray-400 ml-1 text-xs">({{ f.unit }})</span>
+                                <div class="text-gray-500 mt-0.5 text-[10px]">P:{{f.protein}} C:{{f.carbs}} F:{{f.fat}}</div>
+                            </div>
+                            <button @click="deleteFood(fname)" class="text-red-400 text-lg font-bold px-2">&times;</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <h2 class="text-base font-bold text-gray-700 mb-3">🔄 营养反推食物</h2>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-gray-600">需要补充:</span>
+                            <div class="flex gap-1">
+                                <input type="number" v-model="reverse.targetValue" class="border border-gray-200 p-1.5 rounded w-16 text-center text-xs focus:outline-none">
+                                <select v-model="reverse.nutrient" class="border border-gray-200 p-1.5 rounded w-16 text-xs focus:outline-none">
+                                    <option value="protein">蛋白</option>
+                                    <option value="carbs">碳水</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-gray-600">使用食物:</span>
+                            <select v-model="reverse.food" class="border border-gray-200 p-1.5 rounded flex-grow ml-2 text-xs focus:outline-none">
+                                <option v-for="(f, fname) in foods" :value="fname">{{ fname }}</option>
+                            </select>
+                        </div>
+                        <div class="mt-2 bg-gray-800 text-white p-2 rounded text-center text-sm font-bold" v-if="reverseResult">
+                            需摄入: <span class="text-green-400">{{ reverseResult }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 模态框：模板管理 -->
+        <transition name="modal">
+            <div v-if="showTemplateModal" class="fixed inset-0 z-50 flex flex-col bg-gray-100">
+                <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm pt-safe">
+                    <h2 class="text-lg font-bold text-gray-800">⚙️ 模板管理</h2>
+                    <button @click="showTemplateModal = false" class="text-blue-500 font-bold text-sm">完成</button>
+                </div>
+                <div class="p-3 overflow-y-auto flex-grow space-y-4">
+                    <div class="flex gap-2 bg-white p-3 rounded-lg shadow-sm">
+                        <input v-model="newTemplateName" placeholder="新模板名称" class="bg-gray-50 border border-gray-200 p-2 rounded flex-grow text-sm focus:outline-none">
+                        <button @click="createTemplate" class="bg-blue-500 text-white px-3 py-2 rounded text-sm font-bold whitespace-nowrap">+ 创建</button>
+                    </div>
+                    <div v-for="(tpl, tName) in templates" :key="tName" class="border border-gray-200 rounded-lg overflow-hidden shadow-sm bg-white">
+                        <div class="bg-gray-50 p-2 flex justify-between items-center border-b border-gray-200">
+                            <h3 class="font-bold text-blue-600 text-base">📌 {{ tName }}</h3>
+                            <button @click="deleteTemplate(tName)" class="text-red-400 text-xs font-bold">删除模板</button>
+                        </div>
+                        <div class="p-2 space-y-2">
+                            <div v-for="(meal, mIndex) in tpl.meals" :key="mIndex" class="flex flex-col gap-1 text-xs bg-gray-50 p-2 rounded border border-gray-200 relative">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <input v-model="meal.name" placeholder="餐次" class="border border-gray-300 p-1 rounded w-20 font-bold focus:outline-none" @change="saveData">
+                                    <button @click="removeMealFromTemplate(tName, mIndex)" class="absolute top-2 right-2 text-red-400 text-lg leading-none">&times;</button>
+                                </div>
+                                <div class="grid grid-cols-3 gap-1">
+                                    <div class="flex items-center bg-white border border-gray-200 rounded p-1"><span class="text-gray-400 w-4">P:</span><input type="number" v-model="meal.target.p" class="w-full bg-transparent text-center focus:outline-none" @change="saveData"></div>
+                                    <div class="flex items-center bg-white border border-gray-200 rounded p-1"><span class="text-gray-400 w-4">C:</span><input type="number" v-model="meal.target.c" class="w-full bg-transparent text-center focus:outline-none" @change="saveData"></div>
+                                    <div class="flex items-center bg-white border border-gray-200 rounded p-1"><span class="text-gray-400 w-4">F:</span><input type="number" v-model="meal.target.f" class="w-full bg-transparent text-center focus:outline-none" @change="saveData"></div>
+                                </div>
+                            </div>
+                            <button @click="addMealToTemplate(tName)" class="text-blue-500 text-xs font-bold w-full text-center py-1.5 border border-dashed border-blue-200 rounded mt-1">+ 增加一餐</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- 模态框：周报分析 (新功能) -->
+        <transition name="modal">
+            <div v-if="showWeeklyModal" class="fixed inset-0 z-50 flex flex-col bg-gray-100">
+                <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm pt-safe">
+                    <h2 class="text-lg font-bold text-gray-800">📅 增肌数据周报</h2>
+                    <button @click="showWeeklyModal = false" class="text-blue-500 font-bold text-sm">关闭</button>
+                </div>
+                <div class="p-4 flex-grow overflow-y-auto space-y-4">
+                    
+                    <!-- 过去7天均值 -->
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-orange-100">
+                        <h3 class="text-orange-600 font-bold mb-3 flex items-center"><span class="mr-2">🔥</span> 过去 7 天日均摄入</h3>
+                        <div class="grid grid-cols-2 gap-3 mb-3">
+                            <div class="bg-gray-50 p-2 rounded border border-gray-100 text-center">
+                                <p class="text-xs text-gray-500">日均总热量</p>
+                                <p class="text-xl font-black text-gray-800">{{ weeklyData.current.cal }} <span class="text-xs font-normal">kcal</span></p>
+                            </div>
+                            <div class="bg-gray-50 p-2 rounded border border-gray-100 text-center">
+                                <p class="text-xs text-gray-500">周平均体重</p>
+                                <p class="text-xl font-black text-blue-600">{{ weeklyData.current.w }} <span class="text-xs font-normal">kg</span></p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                            <div class="bg-blue-50 text-blue-700 p-2 rounded font-bold">P: {{ weeklyData.current.p }}g</div>
+                            <div class="bg-green-50 text-green-700 p-2 rounded font-bold">C: {{ weeklyData.current.c }}g</div>
+                            <div class="bg-yellow-50 text-yellow-700 p-2 rounded font-bold">F: {{ weeklyData.current.f }}g</div>
+                        </div>
+                    </div>
+
+                    <!-- 对比上一周期 -->
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                        <h3 class="text-gray-600 font-bold mb-3 flex items-center"><span class="mr-2">⏮️</span> 上一周期 (第8-14天前)</h3>
+                        <div class="grid grid-cols-2 gap-3 text-center">
+                            <div class="p-2">
+                                <p class="text-xs text-gray-500">上一周期热量</p>
+                                <p class="text-lg font-bold text-gray-700">{{ weeklyData.past.cal }} kcal</p>
+                            </div>
+                            <div class="p-2 border-l border-gray-100">
+                                <p class="text-xs text-gray-500">上一周期均重</p>
+                                <p class="text-lg font-bold text-gray-700">{{ weeklyData.past.w }} kg</p>
+                            </div>
+                        </div>
+                        <div class="mt-2 p-3 bg-gray-50 rounded border border-gray-100 text-sm">
+                            <span class="text-gray-600 font-bold">体重环比变化：</span>
+                            <span :class="weightTrendColor" class="font-black text-lg ml-2">{{ weightTrendValue }}</span>
+                        </div>
+                        <p class="text-[10px] text-gray-400 mt-2 text-center">增肌期建议每周体重增长不要超过 0.25 - 0.5kg，以避免过多脂肪囤积。</p>
+                    </div>
+
+                </div>
+            </div>
+        </transition>
+
+        <!-- 模态框：可视化图表 -->
+        <transition name="modal">
+            <div v-if="showChartModal" class="fixed inset-0 z-50 flex flex-col bg-white">
+                <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm pt-safe">
+                    <h2 class="text-lg font-bold text-gray-800">📈 趋势分析</h2>
+                    <button @click="closeChart" class="text-gray-500 font-bold text-sm">关闭</button>
+                </div>
+                <div class="flex-grow p-2 relative h-[80vh]">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+        </transition>
+
+        <!-- 提示框 -->
+        <transition name="modal">
+            <div v-if="alertMsg" class="fixed top-10 left-1/2 transform -translate-x-1/2 z-[60] bg-gray-800 text-white px-4 py-2 rounded shadow-lg text-sm whitespace-nowrap">
+                {{ alertMsg }}
+            </div>
+        </transition>
+
+    </div>
+
+    <script>
+        const { createApp, nextTick } = Vue;
+        let trendChartInstance = null;
+
+        const DEFAULT_TEMPLATES = {
+            "训练日": { meals: [{ name: "早餐", target: { p: 30, c: 60, f: 10 }, items: [] },{ name: "午餐", target: { p: 40, c: 80, f: 15 }, items: [] },{ name: "练前餐", target: { p: 20, c: 50, f: 5 }, items: [] },{ name: "练后餐", target: { p: 40, c: 70, f: 5 }, items: [] }] },
+            "非训练日": { meals: [{ name: "早餐", target: { p: 30, c: 40, f: 15 }, items: [] },{ name: "午餐", target: { p: 40, c: 50, f: 20 }, items: [] },{ name: "晚餐", target: { p: 40, c: 40, f: 15 }, items: [] }] }
+        };
+
+        createApp({
+            data() {
+                const tzOffset = (new Date()).getTimezoneOffset() * 60000;
+                const today = (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
+                return {
+                    currentDate: today,
+                    showChartModal: false,
+                    showTemplateModal: false,
+                    showWeeklyModal: false,
+                    alertMsg: '',
+                    newTemplateName: '',
+                    logs: JSON.parse(localStorage.getItem('diet_logs_max')) || {},
+                    foods: JSON.parse(localStorage.getItem('diet_foods_max')) || {},
+                    templates: JSON.parse(localStorage.getItem('diet_templates_max')) || DEFAULT_TEMPLATES,
+                    targets: JSON.parse(localStorage.getItem('diet_targets_max')) || { protein: 140, carbs: 300, fat: 60, calories: 2500 },
+                    labels: { protein: 'P(g)', carbs: 'C(g)', fat: 'F(g)', calories: 'Kcal' },
+                    newFood: { name: '', protein: null, carbs: null, fat: null, unit: '100g' },
+                    reverse: { targetValue: 30, nutrient: 'protein', food: '' },
+                    weeklyData: { current: { w: '--', p: 0, c: 0, f: 0, cal: 0 }, past: { w: '--', cal: 0 } }
+                }
+            },
+            computed: {
+                currentLog() {
+                    if (!this.logs[this.currentDate]) {
+                        let defaultWeight = 68.0;
+                        const dates = Object.keys(this.logs).sort();
+                        if (dates.length > 0) { const lastDate = dates[dates.length - 1]; if (this.logs[lastDate].weight) defaultWeight = this.logs[lastDate].weight; }
+                        this.logs[this.currentDate] = { weight: defaultWeight, templateName: '', meals: [] };
+                    }
+                    return this.logs[this.currentDate];
+                },
+                dailyTotal() {
+                    let total = { protein: 0, carbs: 0, fat: 0, calories: 0 };
+                    this.currentLog.meals.forEach(meal => { const m = this.getMealTotals(meal); total.protein += m.p; total.carbs += m.c; total.fat += m.f; });
+                    total.calories = (total.protein * 4) + (total.carbs * 4) + (total.fat * 9);
+                    return total;
+                },
+                reverseResult() {
+                    if (!this.reverse.food) return "请选择食物";
+                    const food = this.foods[this.reverse.food];
+                    if (!food || !food[this.reverse.nutrient] || food[this.reverse.nutrient] === 0) return "营养素为0";
+                    const multiplier = this.reverse.targetValue / food[this.reverse.nutrient];
+                    return `${(multiplier * (food.unit === '1个' ? 1 : 100)).toFixed(1)} ${food.unit === '1个' ? '个' : '克'}`;
+                },
+                weightTrendValue() {
+                    if(this.weeklyData.current.w === '--' || this.weeklyData.past.w === '--') return '-- kg';
+                    const diff = parseFloat(this.weeklyData.current.w) - parseFloat(this.weeklyData.past.w);
+                    return diff > 0 ? `+${diff.toFixed(2)} kg` : `${diff.toFixed(2)} kg`;
+                },
+                weightTrendColor() {
+                    if(this.weeklyData.current.w === '--' || this.weeklyData.past.w === '--') return 'text-gray-500';
+                    const diff = parseFloat(this.weeklyData.current.w) - parseFloat(this.weeklyData.past.w);
+                    return diff > 0.5 ? 'text-red-500' : (diff > 0 ? 'text-green-500' : 'text-blue-500');
+                }
+            },
+            watch: { currentDate() { this.saveData(); } },
+            methods: {
+                showAlert(msg) { this.alertMsg = msg; setTimeout(() => { this.alertMsg = ''; }, 2000); },
+                saveData() {
+                    localStorage.setItem('diet_logs_max', JSON.stringify(this.logs)); localStorage.setItem('diet_foods_max', JSON.stringify(this.foods));
+                    localStorage.setItem('diet_templates_max', JSON.stringify(this.templates)); localStorage.setItem('diet_targets_max', JSON.stringify(this.targets));
+                },
+                progressBarColor(val, target) {
+                    if (!target || target === 0) return 'bg-gray-300';
+                    const ratio = val / target; return ratio < 0.8 ? 'bg-blue-500' : (ratio <= 1.05 ? 'bg-green-500' : 'bg-red-500');
+                },
+                
+                createTemplate() {
+                    if (!this.newTemplateName) return this.showAlert('请输入模板名称');
+                    if (this.templates[this.newTemplateName]) return this.showAlert('模板已存在');
+                    this.templates[this.newTemplateName] = { meals: [] }; this.newTemplateName = ''; this.saveData();
+                },
+                deleteTemplate(name) { if(confirm(`删除模板 [${name}]？`)) { delete this.templates[name]; this.saveData(); } },
+                addMealToTemplate(tName) { this.templates[tName].meals.push({ name: '新餐次', target: { p: 0, c: 0, f: 0 }, items: [] }); this.saveData(); },
+                removeMealFromTemplate(tName, index) { this.templates[tName].meals.splice(index, 1); this.saveData(); },
+                applyTemplate(tName) {
+                    if (this.currentLog.meals.length > 0 && !confirm(`应用会清空今日数据，继续吗？`)) return;
+                    const templateData = JSON.parse(JSON.stringify(this.templates[tName]));
+                    this.currentLog.meals = templateData.meals; this.currentLog.templateName = tName;
+                    let sumP = 0, sumC = 0, sumF = 0;
+                    templateData.meals.forEach(m => { sumP += m.target.p||0; sumC += m.target.c||0; sumF += m.target.f||0; });
+                    this.targets = { protein: sumP, carbs: sumC, fat: sumF, calories: (sumP*4 + sumC*4 + sumF*9) };
+                    this.saveData();
+                },
+
+                addMeal() { this.currentLog.meals.push({ name: `第${this.currentLog.meals.length + 1}餐`, target: {p:0,c:0,f:0}, items: [] }); this.saveData(); },
+                removeMeal(index) { if(confirm('删除此餐？')) { this.currentLog.meals.splice(index, 1); this.saveData(); } },
+                addFood(mealIndex) {
+                    const keys = Object.keys(this.foods); if (keys.length === 0) return this.showAlert('请添加食物库！');
+                    this.currentLog.meals[mealIndex].items.push({ food: keys[0], amount: '' }); this.saveData();
+                },
+                removeFood(mealIndex, foodIndex) { this.currentLog.meals[mealIndex].items.splice(foodIndex, 1); this.saveData(); },
+                
+                addNewFood() {
+                    if (!this.newFood.name) return this.showAlert('请输入食物名');
+                    this.foods[this.newFood.name] = { protein: parseFloat(this.newFood.protein || 0), carbs: parseFloat(this.newFood.carbs || 0), fat: parseFloat(this.newFood.fat || 0), unit: this.newFood.unit };
+                    this.saveData(); this.newFood = { name: '', protein: null, carbs: null, fat: null, unit: '100g' };
+                },
+                deleteFood(name) { if(confirm(`删除食物 [${name}]？`)) { delete this.foods[name]; this.saveData(); } },
+                getMealTotals(meal) {
+                    let p = 0, c = 0, f = 0;
+                    meal.items.forEach(item => {
+                        const food = this.foods[item.food];
+                        if (food && item.amount) { p += food.protein * parseFloat(item.amount); c += food.carbs * parseFloat(item.amount); f += food.fat * parseFloat(item.amount); }
+                    });
+                    return { p, c, f, cal: p*4 + c*4 + f*9 };
+                },
+                getFoodMacros(item) {
+                    const f = this.foods[item.food]; if(!f || !item.amount) return 'P:0 C:0 F:0';
+                    const p = (f.protein * item.amount), c = (f.carbs * item.amount), fat = (f.fat * item.amount);
+                    return `P:${p.toFixed(1)} C:${c.toFixed(1)} F:${fat.toFixed(1)} | ${(p*4+c*4+fat*9).toFixed(0)}kcal`;
+                },
+
+                // 周报逻辑
+                openWeeklyReport() {
+                    const datesDesc = Object.keys(this.logs).sort((a,b) => new Date(b) - new Date(a));
+                    const currentDates = datesDesc.slice(0, 7);
+                    const pastDates = datesDesc.slice(7, 14);
+
+                    const calc = (datesArr) => {
+                        let wSum=0, wCount=0, pSum=0, cSum=0, fSum=0, calSum=0;
+                        datesArr.forEach(d => {
+                            const log = this.logs[d];
+                            if(log.weight) { wSum += parseFloat(log.weight); wCount++; }
+                            log.meals.forEach(meal => {
+                                const m = this.getMealTotals(meal);
+                                pSum+=m.p; cSum+=m.c; fSum+=m.f; calSum+=m.cal;
+                            });
+                        });
+                        const days = datesArr.length || 1;
+                        return {
+                            w: wCount > 0 ? (wSum/wCount).toFixed(2) : '--',
+                            p: (pSum/days).toFixed(0),
+                            c: (cSum/days).toFixed(0),
+                            f: (fSum/days).toFixed(0),
+                            cal: (calSum/days).toFixed(0)
+                        };
+                    };
+                    this.weeklyData = { current: calc(currentDates), past: calc(pastDates) };
+                    this.showWeeklyModal = true;
+                },
+
+                async copyDataToClipboard() {
+                    const data = { logs: this.logs, foods: this.foods, templates: this.templates, targets: this.targets };
+                    const jsonStr = JSON.stringify(data);
+                    const compressed = LZString.compressToBase64(jsonStr);
+                    const finalStr = "【DIET_MAX_V2】" + compressed;
+                    try {
+                        if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(finalStr); this.showAlert("✅ 压缩代码已复制！"); }
+                        else {
+                            let textArea = document.createElement("textarea"); textArea.value = finalStr; textArea.style.position = "fixed"; document.body.appendChild(textArea);
+                            textArea.focus(); textArea.select(); document.execCommand('copy'); textArea.remove(); this.showAlert("✅ 压缩代码已复制！");
+                        }
+                    } catch (err) { this.showAlert("❌ 复制失败。"); }
+                },
+                async importFromClipboard() {
+                    try {
+                        let text = "";
+                        if (navigator.clipboard && navigator.clipboard.readText) { text = await navigator.clipboard.readText(); } else { text = prompt("粘贴备份代码："); }
+                        if (!text) return;
+                        let jsonStr = "";
+                        if (text.startsWith("【DIET_MAX_V2】")) { jsonStr = LZString.decompressFromBase64(text.replace("【DIET_MAX_V2】", "")); }
+                        else if (text.startsWith("【DIET_MAX_DATA_V1】")) { jsonStr = text.replace("【DIET_MAX_DATA_V1】", ""); }
+                        else return this.showAlert("❌ 格式错误");
+                        
+                        const data = JSON.parse(jsonStr);
+                        if (data.logs) this.logs = data.logs; if (data.foods) this.foods = data.foods; if (data.templates) this.templates = data.templates; if (data.targets) this.targets = data.targets;
+                        this.saveData(); this.showAlert("✅ 恢复成功！");
+                    } catch (err) { this.showAlert("❌ 解析失败，代码损坏"); }
+                },
+
+                forceDownload(content, filename, mimeType) {
+                    const blob = new Blob([content], { type: mimeType }); const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+                    setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
+                },
+                mobileExportCSV() {
+                    let csv = "\uFEFF日期,体重(kg),模式,餐次,目标蛋白(g),目标碳水(g),目标脂肪(g),实际蛋白(g),实际碳水(g),实际脂肪(g),总热量(kcal)\n";
+                    Object.keys(this.logs).sort().forEach(date => {
+                        const log = this.logs[date];
+                        log.meals.forEach(meal => {
+                            const act = this.getMealTotals(meal);
+                            csv += `${date},${log.weight||''},${log.templateName||'无'},${meal.name},${meal.target.p||0},${meal.target.c||0},${meal.target.f||0},${act.p.toFixed(1)},${act.c.toFixed(1)},${act.f.toFixed(1)},${act.cal.toFixed(0)}\n`;
+                        });
+                    });
+                    this.forceDownload(csv, `Diet_Export_${this.currentDate}.csv`, "text/csv;charset=utf-8;");
+                },
+
+                openChart() { this.showChartModal = true; nextTick(() => { this.renderChart(); }); },
+                closeChart() { this.showChartModal = false; if (trendChartInstance) { trendChartInstance.destroy(); trendChartInstance = null; } },
+                renderChart() {
+                    const ctx = document.getElementById('trendChart').getContext('2d'); if (trendChartInstance) trendChartInstance.destroy();
+                    const dates = [], wData = [], calData = [];
+                    Object.keys(this.logs).sort().forEach(date => {
+                        dates.push(date.substring(5)); wData.push(this.logs[date].weight || null);
+                        let p=0,c=0,f=0; this.logs[date].meals.forEach(m => { const t = this.getMealTotals(m); p+=t.p; c+=t.c; f+=t.f; });
+                        calData.push((p*4)+(c*4)+(f*9));
+                    });
+                    trendChartInstance = new Chart(ctx, {
+                        type: 'line',
+                        data: { labels: dates, datasets: [{ label: '体重', data: wData, borderColor: '#3b82f6', yAxisID: 'y', tension: 0.3 }, { label: '热量', data: calData, type: 'bar', backgroundColor: 'rgba(239, 68, 68, 0.4)', yAxisID: 'y1' }] },
+                        options: { responsive: true, maintainAspectRatio: false, scales: { y: { position: 'left' }, y1: { position: 'right', grid: { drawOnChartArea: false } } } }
+                    });
+                }
+            },
+            mounted() {
+                this.saveData();
+                // 注册 PWA Service Worker
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.register('./sw.js').then(() => console.log('PWA Ready'));
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
