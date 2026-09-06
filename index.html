@@ -1,33 +1,31 @@
-import os
-import zipfile
-
-# 彻底剥离可能导致缓存白屏的复杂 Service Worker，回归最稳健的单文件网页形态
-html_code = r"""<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>饮食追踪系统 Max</title>
+    <title>饮食追踪系统 Max - Debug</title>
     
-    <script src="https://cdn.staticfile.net/vue/3.3.4/vue.global.prod.min.js"></script>
+    <!-- 降级到 Vue 2 和最基础的 CDN 节点，最大限度兼容所有电脑浏览器 -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.staticfile.net/Chart.js/4.3.0/chart.umd.min.js"></script>
-    <script src="https://cdn.staticfile.net/lz-string/1.5.0/lz-string.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lz-string@1.5.0/libs/lz-string.min.js"></script>
     
     <style>
         [v-cloak] { display: none; }
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; }
         ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 10px; }
-        .modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
-        .modal-enter-from, .modal-leave-to { opacity: 0; }
         body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
         input, select { -webkit-appearance: none; appearance: none; }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-800 p-3 md:p-8 font-sans pb-24 select-none">
+<body class="bg-gray-50 text-gray-800 p-3 md:p-8 font-sans pb-10 select-none">
+    
+    <div id="error-log" style="display: none; background: #fee2e2; color: #991b1b; padding: 20px; margin: 20px; border-radius: 8px; font-family: monospace; font-size: 12px; white-space: pre-wrap;"></div>
+
     <div id="app" v-cloak class="max-w-6xl mx-auto space-y-4 relative">
-        
+        <!-- 顶栏 -->
         <div class="flex flex-col bg-white p-4 rounded-xl shadow-sm border border-gray-200 gap-3">
             <div class="flex justify-between items-center">
                 <h1 class="text-xl font-bold text-gray-800 flex items-center">
@@ -52,6 +50,7 @@ html_code = r"""<!DOCTYPE html>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <!-- 左侧：日常记录 -->
             <div class="lg:col-span-2 space-y-4">
                 
                 <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
@@ -79,7 +78,7 @@ html_code = r"""<!DOCTYPE html>
                         <div v-for="(val, key) in dailyTotal" :key="key" class="p-2 bg-gray-50 rounded-lg border border-gray-100">
                             <div class="flex justify-between items-end mb-1">
                                 <span class="text-gray-500 text-xs font-medium">{{ labels[key] }}</span>
-                                <span class="text-sm font-black">{{ val.toFixed(0) }}<span class="text-[10px] text-gray-400 font-normal">/{{ targets[key] }}</span></span>
+                                <span class="text-sm font-black">{{ val.toFixed(0) }}<span class="text-[10px] text-gray-400 font-normal">/{{ targets[key] || 0 }}</span></span>
                             </div>
                             <div class="w-full bg-gray-200 rounded-full h-1.5">
                                 <div :class="['h-1.5 rounded-full', progressBarColor(val, targets[key])]" 
@@ -105,7 +104,7 @@ html_code = r"""<!DOCTYPE html>
                                 <input v-model="meal.name" class="font-bold text-base text-gray-700 bg-transparent focus:outline-none w-24" @change="saveData">
                                 <button @click="removeMeal(mIndex)" class="text-red-400 text-xs">删除此餐</button>
                             </div>
-                            <div class="grid grid-cols-3 gap-2 text-[10px] font-bold text-gray-600">
+                            <div class="grid grid-cols-3 gap-2 text-[10px] font-bold text-gray-600" v-if="meal.target">
                                 <div>
                                     <div class="flex justify-between mb-0.5"><span>P</span> <span>{{ getMealTotals(meal).p.toFixed(0) }}/{{meal.target.p}}</span></div>
                                     <div class="w-full bg-gray-200 h-1 rounded-full"><div :class="['h-1 rounded-full', progressBarColor(getMealTotals(meal).p, meal.target.p)]" :style="{width: Math.min((getMealTotals(meal).p/(meal.target.p||1))*100, 100)+'%'}"></div></div>
@@ -121,20 +120,22 @@ html_code = r"""<!DOCTYPE html>
                             </div>
                         </div>
                         <div class="p-2 bg-white space-y-2">
-                            <div v-for="(item, iIndex) in meal.items" :key="iIndex" class="flex flex-col gap-1 text-sm bg-gray-50 p-2 rounded">
-                                <div class="flex justify-between items-center gap-2">
-                                    <select v-model="item.food" class="border border-gray-200 p-1.5 rounded flex-grow text-xs bg-white" @change="saveData">
-                                        <option disabled value="">选择食物</option>
-                                        <option v-for="(f, fname) in foods" :value="fname">{{ fname }}</option>
-                                    </select>
-                                    <div class="flex items-center bg-white border border-gray-200 rounded">
-                                        <input type="number" step="0.1" v-model="item.amount" placeholder="量" class="p-1.5 w-16 text-center text-xs focus:outline-none bg-transparent" @input="saveData"> 
-                                        <span class="text-gray-500 text-[10px] w-6 text-center border-l border-gray-100">{{ foods[item.food] ? (foods[item.food].unit === '1个' ? '个' : '百克') : '' }}</span>
+                            <div v-if="meal.items">
+                                <div v-for="(item, iIndex) in meal.items" :key="iIndex" class="flex flex-col gap-1 text-sm bg-gray-50 p-2 rounded mb-2">
+                                    <div class="flex justify-between items-center gap-2">
+                                        <select v-model="item.food" class="border border-gray-200 p-1.5 rounded flex-grow text-xs bg-white" @change="saveData">
+                                            <option disabled value="">选择食物</option>
+                                            <option v-for="(f, fname) in foods" :key="fname" :value="fname">{{ fname }}</option>
+                                        </select>
+                                        <div class="flex items-center bg-white border border-gray-200 rounded">
+                                            <input type="number" step="0.1" v-model="item.amount" placeholder="量" class="p-1.5 w-16 text-center text-xs focus:outline-none bg-transparent" @input="saveData"> 
+                                            <span class="text-gray-500 text-[10px] w-6 text-center border-l border-gray-100">{{ foods[item.food] ? (foods[item.food].unit === '1个' ? '个' : '百克') : '' }}</span>
+                                        </div>
+                                        <button @click="removeFood(mIndex, iIndex)" class="text-red-400 px-2 py-1 text-lg font-bold">&times;</button>
                                     </div>
-                                    <button @click="removeFood(mIndex, iIndex)" class="text-red-400 px-2 py-1 text-lg font-bold">&times;</button>
-                                </div>
-                                <div class="text-gray-500 font-medium text-[10px] text-right">
-                                    {{ getFoodMacros(item) }}
+                                    <div class="text-gray-500 font-medium text-[10px] text-right">
+                                        {{ getFoodMacros(item) }}
+                                    </div>
                                 </div>
                             </div>
                             <button @click="addFood(mIndex)" class="text-blue-500 text-xs font-bold mt-1 w-full text-center py-2 border border-dashed border-blue-200 rounded">
@@ -209,12 +210,37 @@ html_code = r"""<!DOCTYPE html>
                         </div>
                     </div>
                 </div>
+
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <h2 class="text-base font-bold text-gray-700 mb-3">🔄 营养反推食物</h2>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-gray-600">需要补充:</span>
+                            <div class="flex gap-1">
+                                <input type="number" v-model="reverse.targetValue" class="border border-gray-200 p-1.5 rounded w-16 text-center text-xs focus:outline-none">
+                                <select v-model="reverse.nutrient" class="border border-gray-200 p-1.5 rounded w-16 text-xs focus:outline-none">
+                                    <option value="protein">蛋白</option>
+                                    <option value="carbs">碳水</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-gray-600">使用食物:</span>
+                            <select v-model="reverse.food" class="border border-gray-200 p-1.5 rounded flex-grow ml-2 text-xs focus:outline-none">
+                                <option v-for="(f, fname) in foods" :key="'rev_'+fname" :value="fname">{{ fname }}</option>
+                            </select>
+                        </div>
+                        <div class="mt-2 bg-gray-800 text-white p-2 rounded text-center text-sm font-bold" v-if="reverseResult">
+                            需摄入: <span class="text-green-400">{{ reverseResult }}</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
         <transition name="modal">
-            <div v-if="showTemplateModal" class="fixed inset-0 z-50 flex flex-col bg-gray-100">
-                <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm pt-safe">
+            <div v-if="showTemplateModal" class="fixed inset-0 z-50 flex flex-col bg-gray-100" style="z-index: 9999;">
+                <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm" style="padding-top: max(1rem, env(safe-area-inset-top));">
                     <h2 class="text-lg font-bold text-gray-800">⚙️ 模板管理</h2>
                     <button @click="showTemplateModal = false" class="text-blue-500 font-bold text-sm">完成</button>
                 </div>
@@ -229,15 +255,17 @@ html_code = r"""<!DOCTYPE html>
                             <button @click="deleteTemplate(tName)" class="text-red-400 text-xs font-bold">删除模板</button>
                         </div>
                         <div class="p-2 space-y-2">
-                            <div v-for="(meal, mIndex) in tpl.meals" :key="mIndex" class="flex flex-col gap-1 text-xs bg-gray-50 p-2 rounded border border-gray-200 relative">
-                                <div class="flex items-center gap-2 mb-1">
-                                    <input v-model="meal.name" placeholder="餐次" class="border border-gray-300 p-1 rounded w-20 font-bold focus:outline-none" @change="saveData">
-                                    <button @click="removeMealFromTemplate(tName, mIndex)" class="absolute top-2 right-2 text-red-400 text-lg leading-none">&times;</button>
-                                </div>
-                                <div class="grid grid-cols-3 gap-1">
-                                    <div class="flex items-center bg-white border border-gray-200 rounded p-1"><span class="text-gray-400 w-4">P:</span><input type="number" v-model="meal.target.p" class="w-full bg-transparent text-center focus:outline-none" @change="saveData"></div>
-                                    <div class="flex items-center bg-white border border-gray-200 rounded p-1"><span class="text-gray-400 w-4">C:</span><input type="number" v-model="meal.target.c" class="w-full bg-transparent text-center focus:outline-none" @change="saveData"></div>
-                                    <div class="flex items-center bg-white border border-gray-200 rounded p-1"><span class="text-gray-400 w-4">F:</span><input type="number" v-model="meal.target.f" class="w-full bg-transparent text-center focus:outline-none" @change="saveData"></div>
+                            <div v-if="tpl.meals">
+                                <div v-for="(meal, mIndex) in tpl.meals" :key="mIndex" class="flex flex-col gap-1 text-xs bg-gray-50 p-2 rounded border border-gray-200 relative mb-2">
+                                    <div class="flex items-center gap-2 mb-1">
+                                        <input v-model="meal.name" placeholder="餐次" class="border border-gray-300 p-1 rounded w-20 font-bold focus:outline-none" @change="saveData">
+                                        <button @click="removeMealFromTemplate(tName, mIndex)" class="absolute top-2 right-2 text-red-400 text-lg leading-none">&times;</button>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-1" v-if="meal.target">
+                                        <div class="flex items-center bg-white border border-gray-200 rounded p-1"><span class="text-gray-400 w-4">P:</span><input type="number" v-model="meal.target.p" class="w-full bg-transparent text-center focus:outline-none" @change="saveData"></div>
+                                        <div class="flex items-center bg-white border border-gray-200 rounded p-1"><span class="text-gray-400 w-4">C:</span><input type="number" v-model="meal.target.c" class="w-full bg-transparent text-center focus:outline-none" @change="saveData"></div>
+                                        <div class="flex items-center bg-white border border-gray-200 rounded p-1"><span class="text-gray-400 w-4">F:</span><input type="number" v-model="meal.target.f" class="w-full bg-transparent text-center focus:outline-none" @change="saveData"></div>
+                                    </div>
                                 </div>
                             </div>
                             <button @click="addMealToTemplate(tName)" class="text-blue-500 text-xs font-bold w-full text-center py-1.5 border border-dashed border-blue-200 rounded mt-1">+ 增加一餐</button>
@@ -248,8 +276,8 @@ html_code = r"""<!DOCTYPE html>
         </transition>
 
         <transition name="modal">
-            <div v-if="showWeeklyModal" class="fixed inset-0 z-50 flex flex-col bg-gray-100">
-                <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm pt-safe">
+            <div v-if="showWeeklyModal" class="fixed inset-0 z-50 flex flex-col bg-gray-100" style="z-index: 9999;">
+                <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm" style="padding-top: max(1rem, env(safe-area-inset-top));">
                     <h2 class="text-lg font-bold text-gray-800">📅 增肌数据周报</h2>
                     <button @click="showWeeklyModal = false" class="text-blue-500 font-bold text-sm">关闭</button>
                 </div>
@@ -272,298 +300,420 @@ html_code = r"""<!DOCTYPE html>
                             <div class="bg-yellow-50 text-yellow-700 p-2 rounded font-bold">F: {{ weeklyData.current.f }}g</div>
                         </div>
                     </div>
+
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                        <h3 class="text-gray-600 font-bold mb-3 flex items-center"><span class="mr-2">⏮️</span> 上一周期 (第8-14天前)</h3>
+                        <div class="grid grid-cols-2 gap-3 text-center">
+                            <div class="p-2">
+                                <p class="text-xs text-gray-500">上一周期热量</p>
+                                <p class="text-lg font-bold text-gray-700">{{ weeklyData.past.cal }} kcal</p>
+                            </div>
+                            <div class="p-2 border-l border-gray-100">
+                                <p class="text-xs text-gray-500">上一周期均重</p>
+                                <p class="text-lg font-bold text-gray-700">{{ weeklyData.past.w }} kg</p>
+                            </div>
+                        </div>
+                        <div class="mt-2 p-3 bg-gray-50 rounded border border-gray-100 text-sm">
+                            <span class="text-gray-600 font-bold">体重环比变化：</span>
+                            <span :class="weightTrendColor" class="font-black text-lg ml-2">{{ weightTrendValue }}</span>
+                        </div>
+                        <p class="text-[10px] text-gray-400 mt-2 text-center">增肌期建议每周体重增长不要超过 0.25 - 0.5kg，以避免过多脂肪囤积。</p>
+                    </div>
                 </div>
             </div>
         </transition>
 
         <transition name="modal">
-            <div v-if="showChartModal" class="fixed inset-0 z-50 flex flex-col bg-white">
-                <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm pt-safe">
+            <div v-if="showChartModal" class="fixed inset-0 z-50 flex flex-col bg-white" style="z-index: 9999;">
+                <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm" style="padding-top: max(1rem, env(safe-area-inset-top));">
                     <h2 class="text-lg font-bold text-gray-800">📈 趋势分析</h2>
                     <button @click="closeChart" class="text-gray-500 font-bold text-sm">关闭</button>
                 </div>
-                <div class="flex-grow p-2 relative h-[80vh]">
+                <div class="flex-grow p-2 relative" style="height: 80vh;">
                     <canvas id="trendChart"></canvas>
                 </div>
             </div>
         </transition>
 
         <transition name="modal">
-            <div v-if="alertMsg" class="fixed top-10 left-1/2 transform -translate-x-1/2 z-[60] bg-gray-800 text-white px-4 py-2 rounded shadow-lg text-sm whitespace-nowrap">
+            <div v-if="alertMsg" class="fixed top-10 left-1/2 transform -translate-x-1/2 z-[60] bg-gray-800 text-white px-4 py-2 rounded shadow-lg text-sm whitespace-nowrap" style="z-index: 9999;">
                 {{ alertMsg }}
             </div>
         </transition>
 
+        <!-- 正常工作底栏重置按钮 -->
+        <div class="mt-12 text-center pb-4">
+            <button @click="clearAllData" class="text-[10px] text-gray-400 underline">如果您在电脑上遇到卡顿，点此重置本地数据</button>
+        </div>
+
     </div>
 
     <script>
-        const { createApp, nextTick } = Vue;
+        // 捕获所有全局错误并显示在页面顶部，防止“死得不明不白”
+        window.addEventListener('error', function(event) {
+            var errLog = document.getElementById('error-log');
+            if(errLog) {
+                errLog.style.display = 'block';
+                errLog.innerText += 'Error: ' + event.message + '\nLocation: ' + event.filename + ':' + event.lineno + '\n\n';
+            }
+        });
+
+        // === 防御性 JSON 解析 ===
+        function safeLoad(key, defaultVal) {
+            try {
+                const str = localStorage.getItem(key);
+                if (str) {
+                    const parsed = JSON.parse(str);
+                    if (parsed && typeof parsed === 'object') {
+                        return parsed;
+                    }
+                }
+            } catch(e) {
+                console.error("Local storage error on", key, e);
+            }
+            return defaultVal;
+        }
+
+        const DEFAULT_TEMPLATES = {
+            "训练日": { meals: [{ name: "早餐", target: { p: 30, c: 60, f: 10 }, items: [] },{ name: "午餐", target: { p: 40, c: 80, f: 15 }, items: [] },{ name: "练前餐", target: { p: 20, c: 50, f: 5 }, items: [] },{ name: "练后餐", target: { p: 40, c: 70, f: 5 }, items: [] }] },
+            "非训练日": { meals: [{ name: "早餐", target: { p: 30, c: 40, f: 15 }, items: [] },{ name: "午餐", target: { p: 40, c: 50, f: 20 }, items: [] },{ name: "晚餐", target: { p: 40, c: 40, f: 15 }, items: [] }] }
+        };
+
         let trendChartInstance = null;
 
-        createApp({
-            data() {
-                const tzOffset = (new Date()).getTimezoneOffset() * 60000;
-                const today = (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
-                return {
-                    currentDate: today,
-                    showChartModal: false, showTemplateModal: false, showWeeklyModal: false,
-                    alertMsg: '', newTemplateName: '',
-                    logs: JSON.parse(localStorage.getItem('diet_logs_max')) || {},
-                    foods: JSON.parse(localStorage.getItem('diet_foods_max')) || {},
-                    templates: JSON.parse(localStorage.getItem('diet_templates_max')) || {},
-                    targets: JSON.parse(localStorage.getItem('diet_targets_max')) || { protein: 140, carbs: 300, fat: 60, calories: 2500 },
-                    labels: { protein: 'P(g)', carbs: 'C(g)', fat: 'F(g)', calories: 'Kcal' },
-                    newFood: { name: '', protein: null, carbs: null, fat: null, unit: '100g' },
-                    weeklyData: { current: { w: '--', p: 0, c: 0, f: 0, cal: 0 }, past: { w: '--', cal: 0 } },
-                    sync: {
-                        token: localStorage.getItem('diet_sync_token') || '',
-                        gistId: localStorage.getItem('diet_sync_gist') || ''
-                    },
-                    isSyncing: false
-                }
-            },
-            computed: {
-                currentLog() {
-                    if (!this.logs[this.currentDate]) {
-                        let defaultWeight = 68.0;
-                        const dates = Object.keys(this.logs).sort();
-                        if (dates.length > 0) { const lastDate = dates[dates.length - 1]; if (this.logs[lastDate].weight) defaultWeight = this.logs[lastDate].weight; }
-                        this.logs[this.currentDate] = { weight: defaultWeight, templateName: '', meals: [] };
-                    }
-                    return this.logs[this.currentDate];
-                },
-                dailyTotal() {
-                    let total = { protein: 0, carbs: 0, fat: 0, calories: 0 };
-                    this.currentLog.meals.forEach(meal => { const m = this.getMealTotals(meal); total.protein += m.p; total.carbs += m.c; total.fat += m.f; });
-                    total.calories = (total.protein * 4) + (total.carbs * 4) + (total.fat * 9);
-                    return total;
-                },
-                reverseResult() {
-                    if (!this.reverse.food) return "请选择食物";
-                    const food = this.foods[this.reverse.food];
-                    if (!food || !food[this.reverse.nutrient] || food[this.reverse.nutrient] === 0) return "营养素为0";
-                    const multiplier = this.reverse.targetValue / food[this.reverse.nutrient];
-                    return `${(multiplier * (food.unit === '1个' ? 1 : 100)).toFixed(1)} ${food.unit === '1个' ? '个' : '克'}`;
-                },
-                weightTrendValue() {
-                    if(this.weeklyData.current.w === '--' || this.weeklyData.past.w === '--') return '-- kg';
-                    const diff = parseFloat(this.weeklyData.current.w) - parseFloat(this.weeklyData.past.w);
-                    return diff > 0 ? `+${diff.toFixed(2)} kg` : `${diff.toFixed(2)} kg`;
-                },
-                weightTrendColor() {
-                    if(this.weeklyData.current.w === '--' || this.weeklyData.past.w === '--') return 'text-gray-500';
-                    const diff = parseFloat(this.weeklyData.current.w) - parseFloat(this.weeklyData.past.w);
-                    return diff > 0.5 ? 'text-red-500' : (diff > 0 ? 'text-green-500' : 'text-blue-500');
-                }
-            },
-            watch: { currentDate() { this.saveData(); } },
-            methods: {
-                showAlert(msg) { this.alertMsg = msg; setTimeout(() => { this.alertMsg = ''; }, 2000); },
-                saveData() {
-                    localStorage.setItem('diet_logs_max', JSON.stringify(this.logs)); localStorage.setItem('diet_foods_max', JSON.stringify(this.foods));
-                    localStorage.setItem('diet_templates_max', JSON.stringify(this.templates)); localStorage.setItem('diet_targets_max', JSON.stringify(this.targets));
-                },
-                saveSyncConfig() {
-                    localStorage.setItem('diet_sync_token', this.sync.token);
-                    localStorage.setItem('diet_sync_gist', this.sync.gistId);
-                },
-                progressBarColor(val, target) {
-                    if (!target || target === 0) return 'bg-gray-300';
-                    const ratio = val / target; return ratio < 0.8 ? 'bg-blue-500' : (ratio <= 1.05 ? 'bg-green-500' : 'bg-red-500');
-                },
-                
-                async pushToCloud() {
-                    if (!this.sync.token) return this.showAlert('❌ 请先填写 GitHub Token');
-                    this.isSyncing = true;
-                    try {
-                        const dataPayload = JSON.stringify({ logs: this.logs, foods: this.foods, templates: this.templates, targets: this.targets });
-                        const headers = { 'Authorization': `token ${this.sync.token}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' };
-                        const body = JSON.stringify({
-                            description: "Diet Max Cloud Backup",
-                            public: false,
-                            files: { "diet_max_data.json": { content: dataPayload } }
-                        });
-
-                        let url = 'https://api.github.com/gists';
-                        let method = 'POST'; 
-                        if (this.sync.gistId) {
-                            url = `https://api.github.com/gists/${this.sync.gistId}`;
-                            method = 'PATCH'; 
-                        }
-
-                        const res = await fetch(url, { method, headers, body });
-                        const resData = await res.json();
+        // 如果是 Vue 2，初始化方式不同于 Vue 3
+        if (typeof Vue !== 'undefined') {
+            new Vue({
+                el: '#app',
+                data() {
+                    const tzOffset = (new Date()).getTimezoneOffset() * 60000;
+                    const today = (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
+                    return {
+                        currentDate: today,
+                        showChartModal: false, showTemplateModal: false, showWeeklyModal: false,
+                        alertMsg: '', newTemplateName: '',
                         
-                        if (res.ok) {
-                            if (!this.sync.gistId) {
-                                this.sync.gistId = resData.id;
-                                this.saveSyncConfig();
+                        // 使用安全加载函数
+                        logs: safeLoad('diet_logs_max', {}),
+                        foods: safeLoad('diet_foods_max', {}),
+                        templates: safeLoad('diet_templates_max', DEFAULT_TEMPLATES),
+                        targets: safeLoad('diet_targets_max', { protein: 140, carbs: 300, fat: 60, calories: 2500 }),
+                        
+                        labels: { protein: 'P(g)', carbs: 'C(g)', fat: 'F(g)', calories: 'Kcal' },
+                        newFood: { name: '', protein: null, carbs: null, fat: null, unit: '100g' },
+                        weeklyData: { current: { w: '--', p: 0, c: 0, f: 0, cal: 0 }, past: { w: '--', cal: 0 } },
+                        sync: {
+                            token: localStorage.getItem('diet_sync_token') || '',
+                            gistId: localStorage.getItem('diet_sync_gist') || ''
+                        },
+                        isSyncing: false
+                    }
+                },
+                computed: {
+                    currentLog() {
+                        let log = this.logs[this.currentDate];
+                        if (!log || typeof log !== 'object') {
+                            let defaultWeight = 68.0;
+                            const dates = Object.keys(this.logs).sort();
+                            if (dates.length > 0) { 
+                                const lastDate = dates[dates.length - 1]; 
+                                if (this.logs[lastDate] && this.logs[lastDate].weight) defaultWeight = this.logs[lastDate].weight; 
                             }
-                            this.showAlert('✅ 数据已成功推送到云端！');
-                        } else {
-                            throw new Error(resData.message || 'API Error');
+                            log = { weight: defaultWeight, templateName: '', meals: [] };
+                            // Vue 2 响应式属性赋值
+                            this.$set(this.logs, this.currentDate, log);
                         }
-                    } catch (err) {
-                        this.showAlert(`❌ 推送失败: ${err.message}`);
+                        if (!log.meals) this.$set(log, 'meals', []);
+                        return log;
+                    },
+                    dailyTotal() {
+                        let total = { protein: 0, carbs: 0, fat: 0, calories: 0 };
+                        if(!this.currentLog || !this.currentLog.meals) return total;
+                        this.currentLog.meals.forEach(meal => { 
+                            const m = this.getMealTotals(meal); 
+                            total.protein += m.p; total.carbs += m.c; total.fat += m.f; 
+                        });
+                        total.calories = (total.protein * 4) + (total.carbs * 4) + (total.fat * 9);
+                        return total;
+                    },
+                    reverseResult() {
+                        if (!this.reverse.food) return "请选择食物";
+                        const food = this.foods[this.reverse.food];
+                        if (!food || !food[this.reverse.nutrient] || food[this.reverse.nutrient] === 0) return "营养素为0";
+                        const multiplier = this.reverse.targetValue / food[this.reverse.nutrient];
+                        return `${(multiplier * (food.unit === '1个' ? 1 : 100)).toFixed(1)} ${food.unit === '1个' ? '个' : '克'}`;
+                    },
+                    weightTrendValue() {
+                        if(this.weeklyData.current.w === '--' || this.weeklyData.past.w === '--') return '-- kg';
+                        const diff = parseFloat(this.weeklyData.current.w) - parseFloat(this.weeklyData.past.w);
+                        return diff > 0 ? `+${diff.toFixed(2)} kg` : `${diff.toFixed(2)} kg`;
+                    },
+                    weightTrendColor() {
+                        if(this.weeklyData.current.w === '--' || this.weeklyData.past.w === '--') return 'text-gray-500';
+                        const diff = parseFloat(this.weeklyData.current.w) - parseFloat(this.weeklyData.past.w);
+                        return diff > 0.5 ? 'text-red-500' : (diff > 0 ? 'text-green-500' : 'text-blue-500');
                     }
-                    this.isSyncing = false;
                 },
-
-                async pullFromCloud() {
-                    if (!this.sync.token || !this.sync.gistId) return this.showAlert('❌ 请填写 Token 和 Gist ID');
-                    if (!confirm('这将会用云端数据覆盖当前设备的本地数据，确认执行吗？')) return;
+                watch: { currentDate() { this.saveData(); }, logs: { deep: true, handler() { this.saveData(); } }, foods: { deep: true, handler() { this.saveData(); } } },
+                methods: {
+                    showAlert(msg) { this.alertMsg = msg; setTimeout(() => { this.alertMsg = ''; }, 2000); },
+                    saveData() {
+                        localStorage.setItem('diet_logs_max', JSON.stringify(this.logs)); 
+                        localStorage.setItem('diet_foods_max', JSON.stringify(this.foods));
+                        localStorage.setItem('diet_templates_max', JSON.stringify(this.templates)); 
+                        localStorage.setItem('diet_targets_max', JSON.stringify(this.targets));
+                    },
+                    saveSyncConfig() {
+                        localStorage.setItem('diet_sync_token', this.sync.token);
+                        localStorage.setItem('diet_sync_gist', this.sync.gistId);
+                    },
+                    progressBarColor(val, target) {
+                        if (!target || target === 0) return 'bg-gray-300';
+                        const ratio = val / target; return ratio < 0.8 ? 'bg-blue-500' : (ratio <= 1.05 ? 'bg-green-500' : 'bg-red-500');
+                    },
+                    clearAllData() {
+                        if(confirm('警告：这将会清空电脑里所有的历史记录与食物库数据！\n如果您遇到白屏或卡顿错误，可以点击确定。是否继续？')) {
+                            localStorage.clear();
+                            location.reload();
+                        }
+                    },
                     
-                    this.isSyncing = true;
-                    try {
-                        const headers = { 'Authorization': `token ${this.sync.token}`, 'Accept': 'application/vnd.github.v3+json' };
-                        const res = await fetch(`https://api.github.com/gists/${this.sync.gistId}`, { headers });
-                        const resData = await res.json();
+                    async pushToCloud() {
+                        if (!this.sync.token) return this.showAlert('❌ 请先填写 GitHub Token');
+                        this.isSyncing = true;
+                        try {
+                            const dataPayload = JSON.stringify({ logs: this.logs, foods: this.foods, templates: this.templates, targets: this.targets });
+                            const headers = { 'Authorization': `token ${this.sync.token}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json' };
+                            const body = JSON.stringify({
+                                description: "Diet Max Cloud Backup",
+                                public: false,
+                                files: { "diet_max_data.json": { content: dataPayload } }
+                            });
 
-                        if (res.ok && resData.files && resData.files["diet_max_data.json"]) {
-                            const cloudData = JSON.parse(resData.files["diet_max_data.json"].content);
-                            if (cloudData.logs) this.logs = cloudData.logs;
-                            if (cloudData.foods) this.foods = cloudData.foods;
-                            if (cloudData.templates) this.templates = cloudData.templates;
-                            if (cloudData.targets) this.targets = cloudData.targets;
-                            this.saveData();
-                            this.showAlert('✅ 数据拉取覆盖成功！');
-                        } else {
-                            throw new Error(resData.message || '找不到有效的数据文件');
+                            let url = 'https://api.github.com/gists';
+                            let method = 'POST'; 
+                            if (this.sync.gistId) {
+                                url = `https://api.github.com/gists/${this.sync.gistId}`;
+                                method = 'PATCH'; 
+                            }
+
+                            const res = await fetch(url, { method, headers, body });
+                            const resData = await res.json();
+                            
+                            if (res.ok) {
+                                if (!this.sync.gistId) {
+                                    this.sync.gistId = resData.id;
+                                    this.saveSyncConfig();
+                                }
+                                this.showAlert('✅ 数据已推送到云端！');
+                            } else {
+                                throw new Error(resData.message || 'API Error');
+                            }
+                        } catch (err) {
+                            this.showAlert(`❌ 推送失败: ${err.message}`);
                         }
-                    } catch (err) {
-                        this.showAlert(`❌ 拉取失败: ${err.message}`);
-                    }
-                    this.isSyncing = false;
-                },
+                        this.isSyncing = false;
+                    },
 
-                createTemplate() { if(this.newTemplateName) { this.templates[this.newTemplateName] = { meals: [] }; this.newTemplateName = ''; this.saveData(); } },
-                deleteTemplate(name) { delete this.templates[name]; this.saveData(); },
-                addMealToTemplate(tName) { this.templates[tName].meals.push({ name: '新餐次', target: { p: 0, c: 0, f: 0 }, items: [] }); this.saveData(); },
-                removeMealFromTemplate(tName, index) { this.templates[tName].meals.splice(index, 1); this.saveData(); },
-                applyTemplate(tName) {
-                    const templateData = JSON.parse(JSON.stringify(this.templates[tName]));
-                    this.currentLog.meals = templateData.meals; this.currentLog.templateName = tName;
-                    let sumP = 0, sumC = 0, sumF = 0;
-                    templateData.meals.forEach(m => { sumP += m.target.p||0; sumC += m.target.c||0; sumF += m.target.f||0; });
-                    this.targets = { protein: sumP, carbs: sumC, fat: sumF, calories: (sumP*4 + sumC*4 + sumF*9) }; this.saveData();
-                },
+                    async pullFromCloud() {
+                        if (!this.sync.token || !this.sync.gistId) return this.showAlert('❌ 请填写 Token 和 Gist ID');
+                        if (!confirm('这将会用云端数据覆盖当前设备的本地数据，确认执行吗？')) return;
+                        
+                        this.isSyncing = true;
+                        try {
+                            const headers = { 'Authorization': `token ${this.sync.token}`, 'Accept': 'application/vnd.github.v3+json' };
+                            const res = await fetch(`https://api.github.com/gists/${this.sync.gistId}`, { headers });
+                            const resData = await res.json();
 
-                addMeal() { this.currentLog.meals.push({ name: `餐次${this.currentLog.meals.length + 1}`, target: {p:0,c:0,f:0}, items: [] }); this.saveData(); },
-                removeMeal(index) { this.currentLog.meals.splice(index, 1); this.saveData(); },
-                addFood(mealIndex) { const keys = Object.keys(this.foods); if (keys.length > 0) { this.currentLog.meals[mealIndex].items.push({ food: keys[0], amount: '' }); this.saveData(); } },
-                removeFood(mealIndex, foodIndex) { this.currentLog.meals[mealIndex].items.splice(foodIndex, 1); this.saveData(); },
-                addNewFood() { if(this.newFood.name) { this.foods[this.newFood.name] = { protein: parseFloat(this.newFood.protein||0), carbs: parseFloat(this.newFood.carbs||0), fat: parseFloat(this.newFood.fat||0), unit: this.newFood.unit }; this.saveData(); this.newFood = { name: '', protein: null, carbs: null, fat: null, unit: '100g' }; } },
-                deleteFood(name) { delete this.foods[name]; this.saveData(); },
-                
-                getMealTotals(meal) {
-                    let p=0, c=0, f=0;
-                    meal.items.forEach(item => { const food = this.foods[item.food]; if (food && item.amount) { p += food.protein * parseFloat(item.amount); c += food.carbs * parseFloat(item.amount); f += food.fat * parseFloat(item.amount); } });
-                    return { p, c, f, cal: p*4 + c*4 + f*9 };
-                },
+                            if (res.ok && resData.files && resData.files["diet_max_data.json"]) {
+                                const cloudData = JSON.parse(resData.files["diet_max_data.json"].content);
+                                if (cloudData.logs) this.logs = cloudData.logs;
+                                if (cloudData.foods) this.foods = cloudData.foods;
+                                if (cloudData.templates) this.templates = cloudData.templates;
+                                if (cloudData.targets) this.targets = cloudData.targets;
+                                this.saveData();
+                                this.showAlert('✅ 数据拉取覆盖成功！');
+                            } else {
+                                throw new Error(resData.message || '找不到有效的数据文件');
+                            }
+                        } catch (err) {
+                            this.showAlert(`❌ 拉取失败: ${err.message}`);
+                        }
+                        this.isSyncing = false;
+                    },
 
-                openWeeklyReport() {
-                    const datesDesc = Object.keys(this.logs).sort((a,b) => new Date(b) - new Date(a));
-                    const currentDates = datesDesc.slice(0, 7);
-                    const pastDates = datesDesc.slice(7, 14);
+                    createTemplate() { if(this.newTemplateName) { this.$set(this.templates, this.newTemplateName, { meals: [] }); this.newTemplateName = ''; this.saveData(); } },
+                    deleteTemplate(name) { this.$delete(this.templates, name); this.saveData(); },
+                    addMealToTemplate(tName) { if(!this.templates[tName].meals) this.$set(this.templates[tName], 'meals', []); this.templates[tName].meals.push({ name: '新餐次', target: { p: 0, c: 0, f: 0 }, items: [] }); this.saveData(); },
+                    removeMealFromTemplate(tName, index) { this.templates[tName].meals.splice(index, 1); this.saveData(); },
+                    applyTemplate(tName) {
+                        const templateData = JSON.parse(JSON.stringify(this.templates[tName]));
+                        this.currentLog.meals = templateData.meals || []; this.currentLog.templateName = tName;
+                        let sumP = 0, sumC = 0, sumF = 0;
+                        this.currentLog.meals.forEach(m => { 
+                            if(m.target) { sumP += m.target.p||0; sumC += m.target.c||0; sumF += m.target.f||0; }
+                        });
+                        this.targets = { protein: sumP, carbs: sumC, fat: sumF, calories: (sumP*4 + sumC*4 + sumF*9) }; this.saveData();
+                    },
 
-                    const calc = (datesArr) => {
-                        let wSum=0, wCount=0, pSum=0, cSum=0, fSum=0, calSum=0;
-                        datesArr.forEach(d => {
-                            const log = this.logs[d];
-                            if(log.weight) { wSum += parseFloat(log.weight); wCount++; }
-                            log.meals.forEach(meal => {
-                                const m = this.getMealTotals(meal);
-                                pSum+=m.p; cSum+=m.c; fSum+=m.f; calSum+=m.cal;
+                    addMeal() { this.currentLog.meals.push({ name: `餐次${this.currentLog.meals.length + 1}`, target: {p:0,c:0,f:0}, items: [] }); this.saveData(); },
+                    removeMeal(index) { this.currentLog.meals.splice(index, 1); this.saveData(); },
+                    addFood(mealIndex) { 
+                        const keys = Object.keys(this.foods); 
+                        if (keys.length > 0) { 
+                            if(!this.currentLog.meals[mealIndex].items) this.$set(this.currentLog.meals[mealIndex], 'items', []);
+                            this.currentLog.meals[mealIndex].items.push({ food: keys[0], amount: '' }); 
+                            this.saveData(); 
+                        } else {
+                            this.showAlert('请先在底部添加食物库');
+                        }
+                    },
+                    removeFood(mealIndex, foodIndex) { this.currentLog.meals[mealIndex].items.splice(foodIndex, 1); this.saveData(); },
+                    addNewFood() { if(this.newFood.name) { this.$set(this.foods, this.newFood.name, { protein: parseFloat(this.newFood.protein||0), carbs: parseFloat(this.newFood.carbs||0), fat: parseFloat(this.newFood.fat||0), unit: this.newFood.unit }); this.saveData(); this.newFood = { name: '', protein: null, carbs: null, fat: null, unit: '100g' }; } },
+                    deleteFood(name) { this.$delete(this.foods, name); this.saveData(); },
+                    
+                    getMealTotals(meal) {
+                        let p=0, c=0, f=0;
+                        if(meal && meal.items) {
+                            meal.items.forEach(item => { 
+                                const food = this.foods[item.food]; 
+                                if (food && item.amount) { 
+                                    p += (food.protein||0) * parseFloat(item.amount); 
+                                    c += (food.carbs||0) * parseFloat(item.amount); 
+                                    f += (food.fat||0) * parseFloat(item.amount); 
+                                } 
+                            });
+                        }
+                        return { p, c, f, cal: p*4 + c*4 + f*9 };
+                    },
+
+                    openWeeklyReport() {
+                        const datesDesc = Object.keys(this.logs).sort((a,b) => new Date(b) - new Date(a));
+                        const currentDates = datesDesc.slice(0, 7);
+                        const pastDates = datesDesc.slice(7, 14);
+
+                        const calc = (datesArr) => {
+                            let wSum=0, wCount=0, pSum=0, cSum=0, fSum=0, calSum=0;
+                            datesArr.forEach(d => {
+                                const log = this.logs[d];
+                                if(log && log.weight) { wSum += parseFloat(log.weight); wCount++; }
+                                if(log && log.meals) {
+                                    log.meals.forEach(meal => {
+                                        const m = this.getMealTotals(meal);
+                                        pSum+=m.p; cSum+=m.c; fSum+=m.f; calSum+=m.cal;
+                                    });
+                                }
+                            });
+                            const days = datesArr.length || 1;
+                            return {
+                                w: wCount > 0 ? (wSum/wCount).toFixed(2) : '--',
+                                p: (pSum/days).toFixed(0),
+                                c: (cSum/days).toFixed(0),
+                                f: (fSum/days).toFixed(0),
+                                cal: (calSum/days).toFixed(0)
+                            };
+                        };
+                        this.weeklyData = { current: calc(currentDates), past: calc(pastDates) };
+                        this.showWeeklyModal = true;
+                    },
+                    
+                    async copyDataToClipboard() {
+                        const jsonStr = JSON.stringify({ logs: this.logs, foods: this.foods, templates: this.templates, targets: this.targets });
+                        if(typeof LZString === 'undefined') return this.showAlert("压缩库未加载");
+                        const finalStr = "【DIET_MAX_V2】" + LZString.compressToBase64(jsonStr);
+                        try {
+                            if (navigator.clipboard && navigator.clipboard.writeText) {
+                                await navigator.clipboard.writeText(finalStr);
+                                this.showAlert("✅ 已复制");
+                            } else {
+                                let textArea = document.createElement("textarea");
+                                textArea.value = finalStr;
+                                textArea.style.position = "fixed";
+                                document.body.appendChild(textArea);
+                                textArea.focus();
+                                textArea.select();
+                                const successful = document.execCommand('copy');
+                                textArea.remove();
+                                if(successful) this.showAlert("✅ 已复制代码");
+                                else this.showAlert("❌ 不支持快捷复制");
+                            }
+                        } catch (err) {
+                            this.showAlert("❌ 复制失败");
+                        }
+                    },
+                    async importFromClipboard() {
+                        const text = prompt("粘贴备份代码：");
+                        if(text && text.startsWith("【DIET_MAX_V2】")) {
+                            try {
+                                if(typeof LZString === 'undefined') return this.showAlert("压缩库未加载");
+                                const data = JSON.parse(LZString.decompressFromBase64(text.replace("【DIET_MAX_V2】", "")));
+                                if (data.logs) this.logs = data.logs; 
+                                if (data.foods) this.foods = data.foods; 
+                                if (data.templates) this.templates = data.templates;
+                                if (data.targets) this.targets = data.targets;
+                                this.saveData(); 
+                                this.showAlert("✅ 恢复成功");
+                            } catch(e) {
+                                this.showAlert("❌ 备份代码已损坏");
+                            }
+                        } else if(text) {
+                            this.showAlert("❌ 代码格式不正确");
+                        }
+                    },
+                    forceDownload(content, filename) {
+                        const blob = new Blob([content], { type: "text/csv;charset=utf-8;" }); 
+                        const a = document.createElement('a'); 
+                        a.href = URL.createObjectURL(blob); 
+                        a.download = filename; 
+                        a.click();
+                    },
+                    mobileExportCSV() {
+                        let csv = "\uFEFF日期,体重(kg),今日模式,总蛋白质(g),总碳水(g),总脂肪(g),总热量(kcal)\n";
+                        Object.keys(this.logs).sort().forEach(date => {
+                            const log = this.logs[date]; let totalP = 0, totalC = 0, totalF = 0;
+                            if(log && log.meals) {
+                                log.meals.forEach(m => { const act = this.getMealTotals(m); totalP += act.p; totalC += act.c; totalF += act.f; });
+                            }
+                            csv += `${date},${log.weight||''},${log.templateName||'无'},${totalP.toFixed(1)},${totalC.toFixed(1)},${totalF.toFixed(1)},${((totalP*4)+(totalC*4)+(totalF*9)).toFixed(0)}\n`;
+                        });
+                        this.forceDownload(csv, `Diet_Daily_Export_${this.currentDate}.csv`);
+                    },
+                    openChart() {
+                        this.showChartModal = true;
+                        this.$nextTick(() => {
+                            const ctx = document.getElementById('trendChart');
+                            if (!ctx) return;
+                            if (trendChartInstance) trendChartInstance.destroy();
+                            const dates = [], wData = [], calData = [];
+                            Object.keys(this.logs).sort().forEach(date => {
+                                dates.push(date.substring(5)); 
+                                wData.push(this.logs[date].weight || null);
+                                let p=0,c=0,f=0; 
+                                if(this.logs[date].meals) {
+                                    this.logs[date].meals.forEach(m => { const t = this.getMealTotals(m); p+=t.p; c+=t.c; f+=t.f; });
+                                }
+                                calData.push((p*4)+(c*4)+(f*9));
+                            });
+                            trendChartInstance = new Chart(ctx.getContext('2d'), {
+                                type: 'line',
+                                data: { labels: dates, datasets: [{ label: '体重', data: wData, borderColor: '#3b82f6', yAxisID: 'y', tension: 0.3 }, { label: '热量', data: calData, type: 'bar', backgroundColor: 'rgba(239, 68, 68, 0.4)', yAxisID: 'y1' }] },
+                                options: { responsive: true, maintainAspectRatio: false, scales: { y: { position: 'left' }, y1: { position: 'right', grid: { drawOnChartArea: false } } } }
                             });
                         });
-                        const days = datesArr.length || 1;
-                        return {
-                            w: wCount > 0 ? (wSum/wCount).toFixed(2) : '--',
-                            p: (pSum/days).toFixed(0),
-                            c: (cSum/days).toFixed(0),
-                            f: (fSum/days).toFixed(0),
-                            cal: (calSum/days).toFixed(0)
-                        };
-                    };
-                    this.weeklyData = { current: calc(currentDates), past: calc(pastDates) };
-                    this.showWeeklyModal = true;
-                },
-                
-                async copyDataToClipboard() {
-                    const jsonStr = JSON.stringify({ logs: this.logs, foods: this.foods, templates: this.templates, targets: this.targets });
-                    const finalStr = "【DIET_MAX_V2】" + LZString.compressToBase64(jsonStr);
-                    try {
-                        if (navigator.clipboard && window.isSecureContext) {
-                            await navigator.clipboard.writeText(finalStr);
-                            this.showAlert("✅ 已复制");
-                        } else {
-                            let textArea = document.createElement("textarea");
-                            textArea.value = finalStr;
-                            textArea.style.position = "fixed";
-                            document.body.appendChild(textArea);
-                            textArea.focus();
-                            textArea.select();
-                            document.execCommand('copy');
-                            textArea.remove();
-                            this.showAlert("✅ 已复制");
-                        }
-                    } catch (err) {
-                        this.showAlert("❌ 复制失败");
+                    },
+                    closeChart() {
+                        this.showChartModal = false;
+                        if (trendChartInstance) { trendChartInstance.destroy(); trendChartInstance = null; }
                     }
                 },
-                async importFromClipboard() {
-                    const text = prompt("粘贴备份代码：");
-                    if(text && text.startsWith("【DIET_MAX_V2】")) {
-                        const data = JSON.parse(LZString.decompressFromBase64(text.replace("【DIET_MAX_V2】", "")));
-                        if (data.logs) this.logs = data.logs; if (data.foods) this.foods = data.foods; this.saveData(); this.showAlert("✅ 恢复成功");
-                    }
-                },
-                forceDownload(content, filename) {
-                    const blob = new Blob([content], { type: "text/csv;charset=utf-8;" }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
-                },
-                mobileExportCSV() {
-                    let csv = "\uFEFF日期,体重(kg),今日模式,总蛋白质(g),总碳水(g),总脂肪(g),总热量(kcal)\n";
-                    Object.keys(this.logs).sort().forEach(date => {
-                        const log = this.logs[date]; let totalP = 0, totalC = 0, totalF = 0;
-                        log.meals.forEach(m => { const act = this.getMealTotals(m); totalP += act.p; totalC += act.c; totalF += act.f; });
-                        csv += `${date},${log.weight||''},${log.templateName||'无'},${totalP.toFixed(1)},${totalC.toFixed(1)},${totalF.toFixed(1)},${((totalP*4)+(totalC*4)+(totalF*9)).toFixed(0)}\n`;
-                    });
-                    this.forceDownload(csv, `Diet_Daily_Export_${this.currentDate}.csv`);
-                },
-                openChart() {
-                    this.showChartModal = true;
-                    nextTick(() => {
-                        const ctx = document.getElementById('trendChart');
-                        if (!ctx) return;
-                        if (trendChartInstance) trendChartInstance.destroy();
-                        const dates = [], wData = [], calData = [];
-                        Object.keys(this.logs).sort().forEach(date => {
-                            dates.push(date.substring(5)); wData.push(this.logs[date].weight || null);
-                            let p=0,c=0,f=0; this.logs[date].meals.forEach(m => { const t = this.getMealTotals(m); p+=t.p; c+=t.c; f+=t.f; });
-                            calData.push((p*4)+(c*4)+(f*9));
-                        });
-                        trendChartInstance = new Chart(ctx.getContext('2d'), {
-                            type: 'line',
-                            data: { labels: dates, datasets: [{ label: '体重', data: wData, borderColor: '#3b82f6', yAxisID: 'y', tension: 0.3 }, { label: '热量', data: calData, type: 'bar', backgroundColor: 'rgba(239, 68, 68, 0.4)', yAxisID: 'y1' }] },
-                            options: { responsive: true, maintainAspectRatio: false, scales: { y: { position: 'left' }, y1: { position: 'right', grid: { drawOnChartArea: false } } } }
-                        });
-                    });
-                },
-                closeChart() {
-                    this.showChartModal = false;
-                    if (trendChartInstance) { trendChartInstance.destroy(); trendChartInstance = null; }
+                mounted() {
+                    this.saveData();
                 }
-            },
-            mounted() {
-                this.saveData();
-            }
-        }).mount('#app');
+            });
+        } else {
+            document.getElementById('error-log').style.display = 'block';
+            document.getElementById('error-log').innerText = "致命错误：Vue.js 核心库加载失败。这可能是因为您的网络无法连接到 jsdelivr CDN。";
+        }
     </script>
 </body>
-</html>"""
-
-zip_path = '/mnt/data/Diet_Tracker_Single_File.zip'
-with zipfile.ZipFile(zip_path, 'w') as zf:
-    zf.writestr('index.html', html_code)
-
-print(f"Zip created at {zip_path}")
+</html>
