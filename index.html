@@ -11,6 +11,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
+    <!-- 使用稳定 CDN -->
     <script src="https://cdn.staticfile.net/vue/3.3.4/vue.global.prod.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.staticfile.net/Chart.js/4.3.0/chart.umd.min.js"></script>
@@ -213,10 +214,34 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <h2 class="text-base font-bold text-gray-700 mb-3">🔄 营养反推食物</h2>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-gray-600">需要补充:</span>
+                            <div class="flex gap-1">
+                                <input type="number" v-model="reverse.targetValue" class="border border-gray-200 p-1.5 rounded w-16 text-center text-xs focus:outline-none">
+                                <select v-model="reverse.nutrient" class="border border-gray-200 p-1.5 rounded w-16 text-xs focus:outline-none">
+                                    <option value="protein">蛋白</option>
+                                    <option value="carbs">碳水</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-gray-600">使用食物:</span>
+                            <select v-model="reverse.food" class="border border-gray-200 p-1.5 rounded flex-grow ml-2 text-xs focus:outline-none">
+                                <option v-for="(f, fname) in foods" :value="fname">{{ fname }}</option>
+                            </select>
+                        </div>
+                        <div class="mt-2 bg-gray-800 text-white p-2 rounded text-center text-sm font-bold" v-if="reverseResult">
+                            需摄入: <span class="text-green-400">{{ reverseResult }}</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- 各种模态框省略重复展示 -->
         <transition name="modal">
             <div v-if="showTemplateModal" class="fixed inset-0 z-50 flex flex-col bg-gray-100">
                 <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm pt-safe">
@@ -277,6 +302,37 @@
                             <div class="bg-yellow-50 text-yellow-700 p-2 rounded font-bold">F: {{ weeklyData.current.f }}g</div>
                         </div>
                     </div>
+
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                        <h3 class="text-gray-600 font-bold mb-3 flex items-center"><span class="mr-2">⏮️</span> 上一周期 (第8-14天前)</h3>
+                        <div class="grid grid-cols-2 gap-3 text-center">
+                            <div class="p-2">
+                                <p class="text-xs text-gray-500">上一周期热量</p>
+                                <p class="text-lg font-bold text-gray-700">{{ weeklyData.past.cal }} kcal</p>
+                            </div>
+                            <div class="p-2 border-l border-gray-100">
+                                <p class="text-xs text-gray-500">上一周期均重</p>
+                                <p class="text-lg font-bold text-gray-700">{{ weeklyData.past.w }} kg</p>
+                            </div>
+                        </div>
+                        <div class="mt-2 p-3 bg-gray-50 rounded border border-gray-100 text-sm">
+                            <span class="text-gray-600 font-bold">体重环比变化：</span>
+                            <span :class="weightTrendColor" class="font-black text-lg ml-2">{{ weightTrendValue }}</span>
+                        </div>
+                        <p class="text-[10px] text-gray-400 mt-2 text-center">增肌期建议每周体重增长不要超过 0.25 - 0.5kg，以避免过多脂肪囤积。</p>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <transition name="modal">
+            <div v-if="showChartModal" class="fixed inset-0 z-50 flex flex-col bg-white">
+                <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm pt-safe">
+                    <h2 class="text-lg font-bold text-gray-800">📈 趋势分析</h2>
+                    <button @click="closeChart" class="text-gray-500 font-bold text-sm">关闭</button>
+                </div>
+                <div class="flex-grow p-2 relative h-[80vh]">
+                    <canvas id="trendChart"></canvas>
                 </div>
             </div>
         </transition>
@@ -307,7 +363,6 @@
                     labels: { protein: 'P(g)', carbs: 'C(g)', fat: 'F(g)', calories: 'Kcal' },
                     newFood: { name: '', protein: null, carbs: null, fat: null, unit: '100g' },
                     weeklyData: { current: { w: '--', p: 0, c: 0, f: 0, cal: 0 }, past: { w: '--', cal: 0 } },
-                    // 云同步配置
                     sync: {
                         token: localStorage.getItem('diet_sync_token') || '',
                         gistId: localStorage.getItem('diet_sync_gist') || ''
@@ -330,6 +385,23 @@
                     this.currentLog.meals.forEach(meal => { const m = this.getMealTotals(meal); total.protein += m.p; total.carbs += m.c; total.fat += m.f; });
                     total.calories = (total.protein * 4) + (total.carbs * 4) + (total.fat * 9);
                     return total;
+                },
+                reverseResult() {
+                    if (!this.reverse.food) return "请选择食物";
+                    const food = this.foods[this.reverse.food];
+                    if (!food || !food[this.reverse.nutrient] || food[this.reverse.nutrient] === 0) return "营养素为0";
+                    const multiplier = this.reverse.targetValue / food[this.reverse.nutrient];
+                    return `${(multiplier * (food.unit === '1个' ? 1 : 100)).toFixed(1)} ${food.unit === '1个' ? '个' : '克'}`;
+                },
+                weightTrendValue() {
+                    if(this.weeklyData.current.w === '--' || this.weeklyData.past.w === '--') return '-- kg';
+                    const diff = parseFloat(this.weeklyData.current.w) - parseFloat(this.weeklyData.past.w);
+                    return diff > 0 ? `+${diff.toFixed(2)} kg` : `${diff.toFixed(2)} kg`;
+                },
+                weightTrendColor() {
+                    if(this.weeklyData.current.w === '--' || this.weeklyData.past.w === '--') return 'text-gray-500';
+                    const diff = parseFloat(this.weeklyData.current.w) - parseFloat(this.weeklyData.past.w);
+                    return diff > 0.5 ? 'text-red-500' : (diff > 0 ? 'text-green-500' : 'text-blue-500');
                 }
             },
             watch: { currentDate() { this.saveData(); } },
@@ -348,7 +420,6 @@
                     const ratio = val / target; return ratio < 0.8 ? 'bg-blue-500' : (ratio <= 1.05 ? 'bg-green-500' : 'bg-red-500');
                 },
                 
-                // === GitHub Gist 云同步核心逻辑 ===
                 async pushToCloud() {
                     if (!this.sync.token) return this.showAlert('❌ 请先填写 GitHub Token');
                     this.isSyncing = true;
@@ -362,10 +433,10 @@
                         });
 
                         let url = 'https://api.github.com/gists';
-                        let method = 'POST'; // 创建新Gist
+                        let method = 'POST'; 
                         if (this.sync.gistId) {
                             url = `https://api.github.com/gists/${this.sync.gistId}`;
-                            method = 'PATCH'; // 更新已有Gist
+                            method = 'PATCH'; 
                         }
 
                         const res = await fetch(url, { method, headers, body });
@@ -413,7 +484,6 @@
                     this.isSyncing = false;
                 },
 
-                // 模板与餐次逻辑 (省略非核心改动)
                 createTemplate() { if(this.newTemplateName) { this.templates[this.newTemplateName] = { meals: [] }; this.newTemplateName = ''; this.saveData(); } },
                 deleteTemplate(name) { delete this.templates[name]; this.saveData(); },
                 addMealToTemplate(tName) { this.templates[tName].meals.push({ name: '新餐次', target: { p: 0, c: 0, f: 0 }, items: [] }); this.saveData(); },
@@ -439,12 +509,55 @@
                     return { p, c, f, cal: p*4 + c*4 + f*9 };
                 },
 
-                openWeeklyReport() { this.showWeeklyModal = true; },
+                openWeeklyReport() {
+                    const datesDesc = Object.keys(this.logs).sort((a,b) => new Date(b) - new Date(a));
+                    const currentDates = datesDesc.slice(0, 7);
+                    const pastDates = datesDesc.slice(7, 14);
+
+                    const calc = (datesArr) => {
+                        let wSum=0, wCount=0, pSum=0, cSum=0, fSum=0, calSum=0;
+                        datesArr.forEach(d => {
+                            const log = this.logs[d];
+                            if(log.weight) { wSum += parseFloat(log.weight); wCount++; }
+                            log.meals.forEach(meal => {
+                                const m = this.getMealTotals(meal);
+                                pSum+=m.p; cSum+=m.c; fSum+=m.f; calSum+=m.cal;
+                            });
+                        });
+                        const days = datesArr.length || 1;
+                        return {
+                            w: wCount > 0 ? (wSum/wCount).toFixed(2) : '--',
+                            p: (pSum/days).toFixed(0),
+                            c: (cSum/days).toFixed(0),
+                            f: (fSum/days).toFixed(0),
+                            cal: (calSum/days).toFixed(0)
+                        };
+                    };
+                    this.weeklyData = { current: calc(currentDates), past: calc(pastDates) };
+                    this.showWeeklyModal = true;
+                },
                 
                 async copyDataToClipboard() {
                     const jsonStr = JSON.stringify({ logs: this.logs, foods: this.foods, templates: this.templates, targets: this.targets });
                     const finalStr = "【DIET_MAX_V2】" + LZString.compressToBase64(jsonStr);
-                    navigator.clipboard.writeText(finalStr); this.showAlert("✅ 已复制");
+                    try {
+                        if (navigator.clipboard && window.isSecureContext) {
+                            await navigator.clipboard.writeText(finalStr);
+                            this.showAlert("✅ 已复制");
+                        } else {
+                            let textArea = document.createElement("textarea");
+                            textArea.value = finalStr;
+                            textArea.style.position = "fixed";
+                            document.body.appendChild(textArea);
+                            textArea.focus();
+                            textArea.select();
+                            document.execCommand('copy');
+                            textArea.remove();
+                            this.showAlert("✅ 已复制");
+                        }
+                    } catch (err) {
+                        this.showAlert("❌ 复制失败");
+                    }
                 },
                 async importFromClipboard() {
                     const text = prompt("粘贴备份代码：");
@@ -465,7 +578,29 @@
                     });
                     this.forceDownload(csv, `Diet_Daily_Export_${this.currentDate}.csv`);
                 },
-                openChart() {}
+                openChart() {
+                    this.showChartModal = true;
+                    nextTick(() => {
+                        const ctx = document.getElementById('trendChart');
+                        if (!ctx) return;
+                        if (trendChartInstance) trendChartInstance.destroy();
+                        const dates = [], wData = [], calData = [];
+                        Object.keys(this.logs).sort().forEach(date => {
+                            dates.push(date.substring(5)); wData.push(this.logs[date].weight || null);
+                            let p=0,c=0,f=0; this.logs[date].meals.forEach(m => { const t = this.getMealTotals(m); p+=t.p; c+=t.c; f+=t.f; });
+                            calData.push((p*4)+(c*4)+(f*9));
+                        });
+                        trendChartInstance = new Chart(ctx.getContext('2d'), {
+                            type: 'line',
+                            data: { labels: dates, datasets: [{ label: '体重', data: wData, borderColor: '#3b82f6', yAxisID: 'y', tension: 0.3 }, { label: '热量', data: calData, type: 'bar', backgroundColor: 'rgba(239, 68, 68, 0.4)', yAxisID: 'y1' }] },
+                            options: { responsive: true, maintainAspectRatio: false, scales: { y: { position: 'left' }, y1: { position: 'right', grid: { drawOnChartArea: false } } } }
+                        });
+                    });
+                },
+                closeChart() {
+                    this.showChartModal = false;
+                    if (trendChartInstance) { trendChartInstance.destroy(); trendChartInstance = null; }
+                }
             },
             mounted() {
                 this.saveData();

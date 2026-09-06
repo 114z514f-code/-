@@ -6,8 +6,10 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('fetch', event => {
-    // 防止缓存 GitHub API 请求导致同步失败
-    if (event.request.url.includes('api.github.com')) return;
+    // 防止缓存导致 GitHub API 或外部脚本加载失败
+    if (event.request.url.includes('api.github.com') || event.request.url.includes('cdn.staticfile')) {
+        return; 
+    }
     
     event.respondWith(
         caches.match(event.request).then(response => {
@@ -18,6 +20,8 @@ self.addEventListener('fetch', event => {
                 caches.open(CACHE_NAME).then(cache => { cache.put(event.request, responseToCache); });
                 return response;
             });
+        }).catch(() => {
+            console.error("Fetch failed; returning offline page instead.", event.request.url);
         })
     );
 });
