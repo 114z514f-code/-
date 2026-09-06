@@ -5,14 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>饮食追踪系统 Max - PWA</title>
     
-    <!-- PWA 核心配置：允许安装到桌面，全屏运行 -->
     <link rel="manifest" href="./manifest.json">
     <meta name="theme-color" content="#3b82f6">
     <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzNiODJmNiIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjYwIj7imqE8L3RleHQ+PC9zdmc+">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-    <!-- 稳定国内 CDN -->
     <script src="https://cdn.staticfile.net/vue/3.3.4/vue.global.prod.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.staticfile.net/Chart.js/4.3.0/chart.umd.min.js"></script>
@@ -32,7 +30,6 @@
 <body class="bg-gray-50 text-gray-800 p-3 md:p-8 font-sans pb-24 select-none">
     <div id="app" v-cloak class="max-w-6xl mx-auto space-y-4 relative">
         
-        <!-- 模块1：顶栏 -->
         <div class="flex flex-col bg-white p-4 rounded-xl shadow-sm border border-gray-200 gap-3">
             <div class="flex justify-between items-center">
                 <h1 class="text-xl font-bold text-gray-800 flex items-center">
@@ -57,7 +54,6 @@
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <!-- 左侧：日常记录 -->
             <div class="lg:col-span-2 space-y-4">
                 
                 <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
@@ -151,7 +147,6 @@
                 </div>
             </div>
 
-            <!-- 右侧列：数据导出与管理 -->
             <div class="space-y-4">
                 
                 <div class="bg-white p-4 rounded-xl shadow-sm border border-blue-200 relative overflow-hidden">
@@ -165,7 +160,7 @@
                         </button>
                         <div class="border-t border-gray-100 my-2"></div>
                         <button @click="mobileExportCSV" class="w-full bg-green-500 text-white py-2.5 rounded-lg text-sm font-bold active:bg-green-600 flex justify-center items-center gap-1 shadow-sm">
-                            <span>📊</span> 导出 Excel (.csv)
+                            <span>📊</span> 导出每日总计数据 (.csv)
                         </button>
                     </div>
                 </div>
@@ -226,7 +221,6 @@
             </div>
         </div>
 
-        <!-- 模态框：模板管理 -->
         <transition name="modal">
             <div v-if="showTemplateModal" class="fixed inset-0 z-50 flex flex-col bg-gray-100">
                 <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm pt-safe">
@@ -262,7 +256,6 @@
             </div>
         </transition>
 
-        <!-- 模态框：周报分析 (新功能) -->
         <transition name="modal">
             <div v-if="showWeeklyModal" class="fixed inset-0 z-50 flex flex-col bg-gray-100">
                 <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm pt-safe">
@@ -270,8 +263,6 @@
                     <button @click="showWeeklyModal = false" class="text-blue-500 font-bold text-sm">关闭</button>
                 </div>
                 <div class="p-4 flex-grow overflow-y-auto space-y-4">
-                    
-                    <!-- 过去7天均值 -->
                     <div class="bg-white p-4 rounded-xl shadow-sm border border-orange-100">
                         <h3 class="text-orange-600 font-bold mb-3 flex items-center"><span class="mr-2">🔥</span> 过去 7 天日均摄入</h3>
                         <div class="grid grid-cols-2 gap-3 mb-3">
@@ -291,7 +282,6 @@
                         </div>
                     </div>
 
-                    <!-- 对比上一周期 -->
                     <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                         <h3 class="text-gray-600 font-bold mb-3 flex items-center"><span class="mr-2">⏮️</span> 上一周期 (第8-14天前)</h3>
                         <div class="grid grid-cols-2 gap-3 text-center">
@@ -310,12 +300,10 @@
                         </div>
                         <p class="text-[10px] text-gray-400 mt-2 text-center">增肌期建议每周体重增长不要超过 0.25 - 0.5kg，以避免过多脂肪囤积。</p>
                     </div>
-
                 </div>
             </div>
         </transition>
 
-        <!-- 模态框：可视化图表 -->
         <transition name="modal">
             <div v-if="showChartModal" class="fixed inset-0 z-50 flex flex-col bg-white">
                 <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm pt-safe">
@@ -328,7 +316,6 @@
             </div>
         </transition>
 
-        <!-- 提示框 -->
         <transition name="modal">
             <div v-if="alertMsg" class="fixed top-10 left-1/2 transform -translate-x-1/2 z-[60] bg-gray-800 text-white px-4 py-2 rounded shadow-lg text-sm whitespace-nowrap">
                 {{ alertMsg }}
@@ -459,7 +446,6 @@
                     return `P:${p.toFixed(1)} C:${c.toFixed(1)} F:${fat.toFixed(1)} | ${(p*4+c*4+fat*9).toFixed(0)}kcal`;
                 },
 
-                // 周报逻辑
                 openWeeklyReport() {
                     const datesDesc = Object.keys(this.logs).sort((a,b) => new Date(b) - new Date(a));
                     const currentDates = datesDesc.slice(0, 7);
@@ -522,16 +508,23 @@
                     const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click();
                     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
                 },
+                
+                // === 更新为每日总计数据导出 ===
                 mobileExportCSV() {
-                    let csv = "\uFEFF日期,体重(kg),模式,餐次,目标蛋白(g),目标碳水(g),目标脂肪(g),实际蛋白(g),实际碳水(g),实际脂肪(g),总热量(kcal)\n";
+                    let csv = "\uFEFF日期,体重(kg),今日模式,总蛋白质(g),总碳水(g),总脂肪(g),总热量(kcal)\n";
                     Object.keys(this.logs).sort().forEach(date => {
                         const log = this.logs[date];
+                        let totalP = 0, totalC = 0, totalF = 0;
                         log.meals.forEach(meal => {
                             const act = this.getMealTotals(meal);
-                            csv += `${date},${log.weight||''},${log.templateName||'无'},${meal.name},${meal.target.p||0},${meal.target.c||0},${meal.target.f||0},${act.p.toFixed(1)},${act.c.toFixed(1)},${act.f.toFixed(1)},${act.cal.toFixed(0)}\n`;
+                            totalP += act.p;
+                            totalC += act.c;
+                            totalF += act.f;
                         });
+                        const totalCal = (totalP * 4) + (totalC * 4) + (totalF * 9);
+                        csv += `${date},${log.weight||''},${log.templateName||'无'},${totalP.toFixed(1)},${totalC.toFixed(1)},${totalF.toFixed(1)},${totalCal.toFixed(0)}\n`;
                     });
-                    this.forceDownload(csv, `Diet_Export_${this.currentDate}.csv`, "text/csv;charset=utf-8;");
+                    this.forceDownload(csv, `Diet_Daily_Export_${this.currentDate}.csv`, "text/csv;charset=utf-8;");
                 },
 
                 openChart() { this.showChartModal = true; nextTick(() => { this.renderChart(); }); },
@@ -553,7 +546,6 @@
             },
             mounted() {
                 this.saveData();
-                // 注册 PWA Service Worker
                 if ('serviceWorker' in navigator) {
                     navigator.serviceWorker.register('./sw.js').then(() => console.log('PWA Ready'));
                 }
