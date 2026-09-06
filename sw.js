@@ -1,4 +1,4 @@
-const CACHE_NAME = 'diet-max-cache-v2';
+const CACHE_NAME = 'diet-max-cache-v1';
 const urlsToCache = [
     './index.html',
     './manifest.json'
