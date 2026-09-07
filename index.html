@@ -306,14 +306,18 @@
                     
                     <div class="bg-white p-4 rounded-xl shadow-sm border border-orange-100">
                         <h3 class="text-orange-600 font-bold mb-3 flex items-center"><span class="mr-2">🔥</span> 过去 7 天日均摄入</h3>
-                        <div class="grid grid-cols-2 gap-3 mb-3">
+                        <div class="grid grid-cols-3 gap-2 mb-3">
                             <div class="bg-gray-50 p-2 rounded border border-gray-100 text-center">
-                                <p class="text-xs text-gray-500">日均总热量</p>
-                                <p class="text-xl font-black text-gray-800">{{ weeklyData.current.cal }} <span class="text-xs font-normal">kcal</span></p>
+                                <p class="text-[10px] text-gray-500">日均热量</p>
+                                <p class="text-base font-black text-gray-800">{{ weeklyData.current.cal }}</p>
                             </div>
                             <div class="bg-gray-50 p-2 rounded border border-gray-100 text-center">
-                                <p class="text-xs text-gray-500">周平均体重</p>
-                                <p class="text-xl font-black text-blue-600">{{ weeklyData.current.w }} <span class="text-xs font-normal">kg</span></p>
+                                <p class="text-[10px] text-gray-500">周均体重</p>
+                                <p class="text-base font-black text-blue-600">{{ weeklyData.current.w }}</p>
+                            </div>
+                            <div class="bg-orange-50 p-2 rounded border border-orange-200 text-center">
+                                <p class="text-[10px] text-orange-600 font-bold">训练天数</p>
+                                <p class="text-base font-black text-orange-600">{{ weeklyData.current.trainDays }} <span class="text-[10px] font-normal text-orange-500">天</span></p>
                             </div>
                         </div>
                         <div class="grid grid-cols-3 gap-2 text-center text-xs">
@@ -325,14 +329,18 @@
 
                     <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                         <h3 class="text-gray-600 font-bold mb-3 flex items-center"><span class="mr-2">⏮️</span> 上一周期 (第8-14天前)</h3>
-                        <div class="grid grid-cols-2 gap-3 text-center">
+                        <div class="grid grid-cols-3 gap-3 text-center">
                             <div class="p-2">
-                                <p class="text-xs text-gray-500">上一周期热量</p>
-                                <p class="text-lg font-bold text-gray-700">{{ weeklyData.past.cal }} kcal</p>
+                                <p class="text-xs text-gray-500">上周期热量</p>
+                                <p class="text-sm font-bold text-gray-700">{{ weeklyData.past.cal }}</p>
                             </div>
                             <div class="p-2 border-l border-gray-100">
-                                <p class="text-xs text-gray-500">上一周期均重</p>
-                                <p class="text-lg font-bold text-gray-700">{{ weeklyData.past.w }} kg</p>
+                                <p class="text-xs text-gray-500">上周期均重</p>
+                                <p class="text-sm font-bold text-gray-700">{{ weeklyData.past.w }}</p>
+                            </div>
+                            <div class="p-2 border-l border-gray-100">
+                                <p class="text-xs text-gray-500">上周期训练</p>
+                                <p class="text-sm font-bold text-gray-700">{{ weeklyData.past.trainDays }} 天</p>
                             </div>
                         </div>
                         <div class="mt-2 p-3 bg-gray-50 rounded border border-gray-100 text-sm">
@@ -431,7 +439,7 @@
                     labels: { protein: 'P(g)', carbs: 'C(g)', fat: 'F(g)', calories: 'Kcal' },
                     newFood: { name: '', protein: null, carbs: null, fat: null, unit: '100g' },
                     reverse: { targetValue: 30, nutrient: 'protein', food: '' },
-                    weeklyData: { current: { w: '--', p: 0, c: 0, f: 0, cal: 0 }, past: { w: '--', cal: 0 } }
+                    weeklyData: { current: { w: '--', p: 0, c: 0, f: 0, cal: 0, trainDays: 0 }, past: { w: '--', cal: 0, trainDays: 0 } }
                 }
             },
             computed: {
@@ -531,7 +539,6 @@
                     const keys = Object.keys(this.foods); if (keys.length === 0) return this.showAlert('请先在下方添加食物库！');
                     this.currentLog.meals[mealIndex].items.push({ type: 'normal', food: keys[0], amount: '' }); this.saveData();
                 },
-                // 快捷打卡录入
                 addQuickFood(mealIndex) {
                     this.currentLog.meals[mealIndex].items.push({ type: 'quick', name: '', p: '', c: '', f: '' });
                     this.saveData();
@@ -573,7 +580,6 @@
                     }
                 },
 
-                // 转移剩余额度逻辑
                 openTransfer(mIndex) {
                     const meal = this.currentLog.meals[mIndex];
                     const actual = this.getMealTotals(meal);
@@ -623,10 +629,15 @@
                     const pastDates = datesDesc.slice(7, 14);
 
                     const calc = (datesArr) => {
-                        let wSum=0, wCount=0, pSum=0, cSum=0, fSum=0, calSum=0;
+                        let wSum=0, wCount=0, pSum=0, cSum=0, fSum=0, calSum=0, trainCount=0;
                         datesArr.forEach(d => {
                             const log = this.logs[d];
                             if(log.weight) { wSum += parseFloat(log.weight); wCount++; }
+                            // 如果当天的模板名字里有“训”字，并且没有“非”字，就算作训练日
+                            if(log.templateName && log.templateName.includes('训') && !log.templateName.includes('非')) {
+                                trainCount++;
+                            }
+                            
                             log.meals.forEach(meal => {
                                 const m = this.getMealTotals(meal);
                                 pSum+=m.p; cSum+=m.c; fSum+=m.f; calSum+=m.cal;
@@ -638,7 +649,8 @@
                             p: (pSum/days).toFixed(0),
                             c: (cSum/days).toFixed(0),
                             f: (fSum/days).toFixed(0),
-                            cal: (calSum/days).toFixed(0)
+                            cal: (calSum/days).toFixed(0),
+                            trainDays: trainCount
                         };
                     };
                     this.weeklyData = { current: calc(currentDates), past: calc(pastDates) };
@@ -697,8 +709,14 @@
                     const ctx = document.getElementById('trendChart').getContext('2d'); if (trendChartInstance) trendChartInstance.destroy();
                     const dates = [], wData = [], calData = [];
                     Object.keys(this.logs).sort().forEach(date => {
-                        dates.push(date.substring(5)); wData.push(this.logs[date].weight || null);
-                        let p=0,c=0,f=0; this.logs[date].meals.forEach(m => { const t = this.getMealTotals(m); p+=t.p; c+=t.c; f+=t.f; });
+                        const log = this.logs[date];
+                        // 判断是否为训练日
+                        const isTrain = log.templateName && log.templateName.includes('训') && !log.templateName.includes('非');
+                        // 在 X 轴日期后面拼接 (训)
+                        dates.push(date.substring(5) + (isTrain ? '(训)' : '')); 
+                        
+                        wData.push(log.weight || null);
+                        let p=0,c=0,f=0; log.meals.forEach(m => { const t = this.getMealTotals(m); p+=t.p; c+=t.c; f+=t.f; });
                         calData.push((p*4)+(c*4)+(f*9));
                     });
                     trendChartInstance = new Chart(ctx, {

@@ -1,5 +1,4 @@
-// 每次修改了 index.html 的功能，请务必把这里的版本号往上加 (如 v4 -> v5)
-const CACHE_NAME = 'diet-max-cache-v4';
+const CACHE_NAME = 'diet-max-cache-v5';
 const urlsToCache = [
     './index.html',
     './manifest.json'
@@ -34,8 +33,7 @@ self.addEventListener('activate', event => {
 });
 
 self.addEventListener('fetch', event => {
-    // 网络优先策略 (Network First)：每次都尽量去服务器拉取最新代码
-    // 如果没有网络（断网），才退回到读取本地缓存
+    // 网络优先策略 (Network First)
     event.respondWith(
         fetch(event.request).then(response => {
             // 如果成功从网络拿到了最新数据，就把最新的存进缓存里备份
