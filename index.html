@@ -109,7 +109,12 @@
                         <div class="bg-gray-50 p-2 border-b border-gray-200">
                             <div class="flex justify-between items-center mb-2">
                                 <input v-model="meal.name" class="font-bold text-base text-gray-700 bg-transparent focus:outline-none w-24" @change="saveData">
-                                <button @click="removeMeal(mIndex)" class="text-red-400 text-xs">删除此餐</button>
+                                <div class="flex gap-2">
+                                    <button @click="openTransfer(mIndex)" class="text-blue-500 text-xs font-bold bg-blue-50 px-2 py-1 rounded shadow-sm border border-blue-100">
+                                        🔄 转移剩余
+                                    </button>
+                                    <button @click="removeMeal(mIndex)" class="text-red-400 text-xs px-2">删除</button>
+                                </div>
                             </div>
                             <div class="grid grid-cols-3 gap-2 text-[10px] font-bold text-gray-600">
                                 <div>
@@ -170,7 +175,7 @@
                     </div>
                 </div>
 
-                <!-- GitHub 云同步 模块开始 -->
+                <!-- GitHub 云同步 模块 -->
                 <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mt-4">
                     <h2 class="text-base font-bold text-gray-700 mb-3 flex items-center"><span class="mr-1">☁️</span> GitHub 云同步</h2>
                     <div class="space-y-2">
@@ -186,7 +191,6 @@
                         </div>
                     </div>
                 </div>
-                <!-- GitHub 云同步 模块结束 -->
 
                 <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                     <h2 class="text-base font-bold text-gray-700 mb-3">📝 食物库管理</h2>
@@ -280,7 +284,7 @@
             </div>
         </transition>
 
-        <!-- 模态框：周报分析 (新功能) -->
+        <!-- 模态框：周报分析 -->
         <transition name="modal">
             <div v-if="showWeeklyModal" class="fixed inset-0 z-50 flex flex-col bg-gray-100">
                 <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm pt-safe">
@@ -289,7 +293,6 @@
                 </div>
                 <div class="p-4 flex-grow overflow-y-auto space-y-4">
                     
-                    <!-- 过去7天均值 -->
                     <div class="bg-white p-4 rounded-xl shadow-sm border border-orange-100">
                         <h3 class="text-orange-600 font-bold mb-3 flex items-center"><span class="mr-2">🔥</span> 过去 7 天日均摄入</h3>
                         <div class="grid grid-cols-2 gap-3 mb-3">
@@ -309,7 +312,6 @@
                         </div>
                     </div>
 
-                    <!-- 对比上一周期 -->
                     <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                         <h3 class="text-gray-600 font-bold mb-3 flex items-center"><span class="mr-2">⏮️</span> 上一周期 (第8-14天前)</h3>
                         <div class="grid grid-cols-2 gap-3 text-center">
@@ -346,6 +348,40 @@
             </div>
         </transition>
 
+        <!-- 模态框：转移剩余营养素 -->
+        <transition name="modal">
+            <div v-if="showTransferModal" class="fixed inset-0 z-[55] flex flex-col justify-center items-center bg-black bg-opacity-40 p-4">
+                <div class="bg-white rounded-xl w-full max-w-sm overflow-hidden shadow-xl">
+                    <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                        <h2 class="text-base font-bold text-gray-800">🔄 转移剩余目标额度</h2>
+                        <button @click="showTransferModal = false" class="text-gray-500 font-bold text-xl leading-none">&times;</button>
+                    </div>
+                    <div class="p-4 space-y-4">
+                        <div class="text-sm text-gray-600">
+                            从 <span class="font-bold text-blue-600">{{ currentLog.meals[transferData.sourceIndex]?.name }}</span> 转移以下未吃完的额度：
+                        </div>
+                        <div class="flex justify-around text-center text-sm font-bold bg-blue-50 p-2 rounded border border-blue-100">
+                            <div class="text-blue-700">P: {{ transferData.p }}g</div>
+                            <div class="text-green-700">C: {{ transferData.c }}g</div>
+                            <div class="text-yellow-700">F: {{ transferData.f }}g</div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-bold text-gray-700">转移至：</span>
+                            <select v-model="transferData.targetIndex" class="border border-gray-300 p-2 rounded flex-grow text-sm focus:outline-none bg-white">
+                                <option value="" disabled>选择接收餐次...</option>
+                                <option v-for="(m, idx) in currentLog.meals" :value="idx" :disabled="idx === transferData.sourceIndex">
+                                    {{ m.name }}
+                                </option>
+                            </select>
+                        </div>
+                        <button @click="confirmTransfer" class="w-full bg-blue-500 text-white py-2.5 rounded-lg text-sm font-bold active:bg-blue-600 shadow-sm">
+                            确认转移
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
         <!-- 提示框 -->
         <transition name="modal">
             <div v-if="alertMsg" class="fixed top-10 left-1/2 transform -translate-x-1/2 z-[60] bg-gray-800 text-white px-4 py-2 rounded shadow-lg text-sm whitespace-nowrap">
@@ -375,6 +411,8 @@
                     showChartModal: false,
                     showTemplateModal: false,
                     showWeeklyModal: false,
+                    showTransferModal: false,
+                    transferData: { sourceIndex: null, targetIndex: '', p: 0, c: 0, f: 0 },
                     alertMsg: '',
                     newTemplateName: '',
                     logs: JSON.parse(localStorage.getItem('diet_logs_max')) || {},
@@ -526,6 +564,49 @@
                     const f = this.foods[item.food]; if(!f || !item.amount) return 'P:0 C:0 F:0';
                     const p = (f.protein * item.amount), c = (f.carbs * item.amount), fat = (f.fat * item.amount);
                     return `P:${p.toFixed(1)} C:${c.toFixed(1)} F:${fat.toFixed(1)} | ${(p*4+c*4+fat*9).toFixed(0)}kcal`;
+                },
+
+                // 转移剩余额度逻辑
+                openTransfer(mIndex) {
+                    const meal = this.currentLog.meals[mIndex];
+                    const actual = this.getMealTotals(meal);
+                    
+                    const remP = Math.max(0, meal.target.p - actual.p);
+                    const remC = Math.max(0, meal.target.c - actual.c);
+                    const remF = Math.max(0, meal.target.f - actual.f);
+                    
+                    if (remP < 0.1 && remC < 0.1 && remF < 0.1) {
+                        return this.showAlert('该餐次目标已达标，没有可转移的额度。');
+                    }
+                    
+                    this.transferData = {
+                        sourceIndex: mIndex,
+                        targetIndex: '',
+                        p: parseFloat(remP.toFixed(1)),
+                        c: parseFloat(remC.toFixed(1)),
+                        f: parseFloat(remF.toFixed(1))
+                    };
+                    this.showTransferModal = true;
+                },
+                confirmTransfer() {
+                    if (this.transferData.targetIndex === '' || this.transferData.targetIndex === this.transferData.sourceIndex) {
+                        return this.showAlert('请选择一个有效的接收餐次');
+                    }
+                    
+                    const src = this.currentLog.meals[this.transferData.sourceIndex];
+                    const dest = this.currentLog.meals[this.transferData.targetIndex];
+                    
+                    src.target.p = parseFloat(Math.max(0, src.target.p - this.transferData.p).toFixed(1));
+                    src.target.c = parseFloat(Math.max(0, src.target.c - this.transferData.c).toFixed(1));
+                    src.target.f = parseFloat(Math.max(0, src.target.f - this.transferData.f).toFixed(1));
+                    
+                    dest.target.p = parseFloat((parseFloat(dest.target.p || 0) + this.transferData.p).toFixed(1));
+                    dest.target.c = parseFloat((parseFloat(dest.target.c || 0) + this.transferData.c).toFixed(1));
+                    dest.target.f = parseFloat((parseFloat(dest.target.f || 0) + this.transferData.f).toFixed(1));
+                    
+                    this.saveData();
+                    this.showTransferModal = false;
+                    this.showAlert('✅ 剩余目标额度已成功转移！');
                 },
 
                 // 周报逻辑
