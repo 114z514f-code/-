@@ -175,23 +175,6 @@
                     </div>
                 </div>
 
-                <!-- GitHub 云同步 模块 -->
-                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200 mt-4">
-                    <h2 class="text-base font-bold text-gray-700 mb-3 flex items-center"><span class="mr-1">☁️</span> GitHub 云同步</h2>
-                    <div class="space-y-2">
-                        <input type="password" v-model="githubToken" @change="saveGithubConfig" placeholder="GitHub Token (需 gist 权限)" class="w-full text-xs p-2 border border-gray-200 rounded focus:outline-none">
-                        <input type="text" v-model="gistId" @change="saveGithubConfig" placeholder="Gist ID (首次上传留空自动生成)" class="w-full text-xs p-2 border border-gray-200 rounded focus:outline-none">
-                        <div class="flex gap-2 mt-2">
-                            <button @click="uploadToGithub" class="w-full bg-gray-800 text-white py-2 rounded-lg text-xs font-bold active:bg-gray-900 flex justify-center items-center gap-1 shadow-sm">
-                                <span>⬆️</span> 上传云端
-                            </button>
-                            <button @click="downloadFromGithub" class="w-full bg-white border border-gray-800 text-gray-800 py-2 rounded-lg text-xs font-bold active:bg-gray-50 flex justify-center items-center gap-1">
-                                <span>⬇️</span> 下载本地
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
                     <h2 class="text-base font-bold text-gray-700 mb-3">📝 食物库管理</h2>
                     <div class="bg-blue-50 p-2 rounded-lg border border-blue-100 space-y-2 mb-3">
