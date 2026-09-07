@@ -74,6 +74,9 @@
                             </button>
                         </div>
                         <div class="flex gap-2 overflow-x-auto pb-1">
+                            <button @click="copyYesterday" class="bg-orange-100 text-orange-600 border border-orange-200 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm whitespace-nowrap flex-shrink-0 flex items-center">
+                                <span class="mr-1">📋</span> 复制昨日
+                            </button>
                             <button v-for="(tpl, tName) in templates" :key="tName" @click="applyTemplate(tName)" 
                                     class="bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm whitespace-nowrap flex-shrink-0">
                                 应用 {{ tName }}
@@ -103,7 +106,7 @@
                         </button>
                     </div>
                     <div v-if="currentLog.meals.length === 0" class="text-center py-6 text-gray-400 text-xs border-2 border-dashed rounded-xl bg-gray-50">
-                        请在上方应用模板或加餐。
+                        请在上方应用模板、复制昨日或加餐。
                     </div>
                     <div v-for="(meal, mIndex) in currentLog.meals" :key="mIndex" class="mb-4 border border-gray-200 rounded-xl overflow-hidden shadow-sm">
                         <div class="bg-gray-50 p-2 border-b border-gray-200">
@@ -131,26 +134,51 @@
                                 </div>
                             </div>
                         </div>
+                        
                         <div class="p-2 bg-white space-y-2">
-                            <div v-for="(item, iIndex) in meal.items" :key="iIndex" class="flex flex-col gap-1 text-sm bg-gray-50 p-2 rounded">
-                                <div class="flex justify-between items-center gap-2">
-                                    <select v-model="item.food" class="border border-gray-200 p-1.5 rounded flex-grow text-xs bg-white" @change="saveData">
-                                        <option disabled value="">选择食物</option>
-                                        <option v-for="(f, fname) in foods" :value="fname">{{ fname }}</option>
-                                    </select>
-                                    <div class="flex items-center bg-white border border-gray-200 rounded">
-                                        <input type="number" step="0.1" v-model="item.amount" placeholder="量" class="p-1.5 w-16 text-center text-xs focus:outline-none bg-transparent" @input="saveData"> 
-                                        <span class="text-gray-500 text-[10px] w-6 text-center border-l border-gray-100">{{ foods[item.food] ? (foods[item.food].unit === '1个' ? '个' : '百克') : '' }}</span>
+                            <div v-for="(item, iIndex) in meal.items" :key="iIndex" class="flex flex-col gap-1 text-sm bg-gray-50 p-2 rounded relative border border-gray-100">
+                                <button @click="removeFood(mIndex, iIndex)" class="absolute top-2 right-2 text-red-400 text-lg font-bold leading-none">&times;</button>
+                                
+                                <!-- 常规食物库录入 -->
+                                <template v-if="!item.type || item.type === 'normal'">
+                                    <div class="flex justify-between items-center gap-2 pr-6">
+                                        <select v-model="item.food" class="border border-gray-200 p-1.5 rounded flex-grow text-xs bg-white focus:outline-none" @change="saveData">
+                                            <option disabled value="">选择食物</option>
+                                            <option v-for="(f, fname) in foods" :value="fname">{{ fname }}</option>
+                                        </select>
+                                        <div class="flex items-center bg-white border border-gray-200 rounded">
+                                            <input type="number" step="0.1" v-model="item.amount" placeholder="量" class="p-1.5 w-16 text-center text-xs focus:outline-none bg-transparent" @input="saveData"> 
+                                            <span class="text-gray-500 text-[10px] w-6 text-center border-l border-gray-100">{{ foods[item.food] ? (foods[item.food].unit === '1个' ? '个' : '百克') : '' }}</span>
+                                        </div>
                                     </div>
-                                    <button @click="removeFood(mIndex, iIndex)" class="text-red-400 px-2 py-1 text-lg font-bold">&times;</button>
-                                </div>
-                                <div class="text-gray-500 font-medium text-[10px] text-right">
+                                </template>
+
+                                <!-- 快捷打卡 (Quick Add) -->
+                                <template v-else-if="item.type === 'quick'">
+                                    <div class="flex flex-col gap-2 pr-6">
+                                        <input type="text" v-model="item.name" placeholder="外食/包装食品名称" class="border border-gray-200 p-1.5 rounded text-xs bg-white w-full focus:outline-none font-bold text-orange-600" @change="saveData">
+                                        <div class="grid grid-cols-3 gap-2">
+                                            <div class="flex items-center bg-white border border-gray-200 rounded p-1 shadow-sm"><span class="text-blue-500 font-bold text-[10px] w-4 text-center">P</span><input type="number" v-model="item.p" class="w-full bg-transparent text-center text-xs focus:outline-none font-bold" @input="saveData"></div>
+                                            <div class="flex items-center bg-white border border-gray-200 rounded p-1 shadow-sm"><span class="text-green-500 font-bold text-[10px] w-4 text-center">C</span><input type="number" v-model="item.c" class="w-full bg-transparent text-center text-xs focus:outline-none font-bold" @input="saveData"></div>
+                                            <div class="flex items-center bg-white border border-gray-200 rounded p-1 shadow-sm"><span class="text-yellow-500 font-bold text-[10px] w-4 text-center">F</span><input type="number" v-model="item.f" class="w-full bg-transparent text-center text-xs focus:outline-none font-bold" @input="saveData"></div>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <div class="text-gray-500 font-medium text-[10px] text-right mt-1">
                                     {{ getFoodMacros(item) }}
                                 </div>
                             </div>
-                            <button @click="addFood(mIndex)" class="text-blue-500 text-xs font-bold mt-1 w-full text-center py-2 border border-dashed border-blue-200 rounded">
-                                + 录入食物
-                            </button>
+
+                            <!-- 添加按钮组 -->
+                            <div class="flex gap-2 mt-1">
+                                <button @click="addFood(mIndex)" class="text-blue-500 text-xs font-bold w-1/2 text-center py-2 border border-dashed border-blue-200 rounded bg-blue-50">
+                                    + 食物库录入
+                                </button>
+                                <button @click="addQuickFood(mIndex)" class="text-orange-500 text-xs font-bold w-1/2 text-center py-2 border border-dashed border-orange-200 rounded bg-orange-50">
+                                    ⚡ 快捷宏量
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -388,8 +416,6 @@
                 const tzOffset = (new Date()).getTimezoneOffset() * 60000;
                 const today = (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
                 return {
-                    githubToken: localStorage.getItem('diet_github_token') || '',
-                    gistId: localStorage.getItem('diet_github_gist_id') || '',
                     currentDate: today,
                     showChartModal: false,
                     showTemplateModal: false,
@@ -446,54 +472,6 @@
             methods: {
                 showAlert(msg) { this.alertMsg = msg; setTimeout(() => { this.alertMsg = ''; }, 2000); },
                 
-                saveGithubConfig() {
-                    localStorage.setItem('diet_github_token', this.githubToken);
-                    localStorage.setItem('diet_github_gist_id', this.gistId);
-                },
-                async uploadToGithub() {
-                    if (!this.githubToken) return this.showAlert('请先输入 GitHub Token');
-                    this.showAlert('正在加密上传...');
-                    const dataStr = JSON.stringify({ logs: this.logs, foods: this.foods, templates: this.templates, targets: this.targets });
-                    const body = {
-                        description: 'Diet Max Cloud Sync',
-                        public: false,
-                        files: { 'diet_max_data.json': { content: dataStr } }
-                    };
-                    try {
-                        const url = this.gistId ? `https://api.github.com/gists/${this.gistId}` : 'https://api.github.com/gists';
-                        const res = await fetch(url, {
-                            method: this.gistId ? 'PATCH' : 'POST',
-                            headers: { 'Authorization': `token ${this.githubToken}`, 'Accept': 'application/vnd.github.v3+json' },
-                            body: JSON.stringify(body)
-                        });
-                        const resData = await res.json();
-                        if (res.ok) {
-                            if (!this.gistId) { this.gistId = resData.id; this.saveGithubConfig(); }
-                            this.showAlert('✅ 数据已同步至 GitHub！');
-                        } else { throw new Error(resData.message); }
-                    } catch (e) { this.showAlert('❌ 上传失败: ' + e.message); }
-                },
-                async downloadFromGithub() {
-                    if (!this.gistId || !this.githubToken) return this.showAlert('需填入 Token 和 Gist ID');
-                    this.showAlert('正在获取云端数据...');
-                    try {
-                        const res = await fetch(`https://api.github.com/gists/${this.gistId}`, {
-                            headers: { 'Authorization': `token ${this.githubToken}`, 'Accept': 'application/vnd.github.v3+json' }
-                        });
-                        const resData = await res.json();
-                        if (res.ok) {
-                            const content = resData.files['diet_max_data.json'].content;
-                            const data = JSON.parse(content);
-                            if (data.logs) this.logs = data.logs;
-                            if (data.foods) this.foods = data.foods;
-                            if (data.templates) this.templates = data.templates;
-                            if (data.targets) this.targets = data.targets;
-                            this.saveData();
-                            this.showAlert('✅ 云端数据已覆盖本地！');
-                        } else { throw new Error(resData.message); }
-                    } catch (e) { this.showAlert('❌ 下载失败: ' + e.message); }
-                },
-
                 saveData() {
                     localStorage.setItem('diet_logs_max', JSON.stringify(this.logs)); localStorage.setItem('diet_foods_max', JSON.stringify(this.foods));
                     localStorage.setItem('diet_templates_max', JSON.stringify(this.templates)); localStorage.setItem('diet_targets_max', JSON.stringify(this.targets));
@@ -512,7 +490,7 @@
                 addMealToTemplate(tName) { this.templates[tName].meals.push({ name: '新餐次', target: { p: 0, c: 0, f: 0 }, items: [] }); this.saveData(); },
                 removeMealFromTemplate(tName, index) { this.templates[tName].meals.splice(index, 1); this.saveData(); },
                 applyTemplate(tName) {
-                    if (this.currentLog.meals.length > 0 && !confirm(`应用会清空今日数据，继续吗？`)) return;
+                    if (this.currentLog.meals.length > 0 && !confirm(`应用会清空今日现有餐次，继续吗？`)) return;
                     const templateData = JSON.parse(JSON.stringify(this.templates[tName]));
                     this.currentLog.meals = templateData.meals; this.currentLog.templateName = tName;
                     let sumP = 0, sumC = 0, sumF = 0;
@@ -520,12 +498,43 @@
                     this.targets = { protein: sumP, carbs: sumC, fat: sumF, calories: (sumP*4 + sumC*4 + sumF*9) };
                     this.saveData();
                 },
+                
+                // 复制昨日记录
+                copyYesterday() {
+                    if (this.currentLog.meals.length > 0 && !confirm(`这会覆盖今日现有的餐次记录，确认复制吗？`)) return;
+                    const dates = Object.keys(this.logs).sort();
+                    let prevDate = null;
+                    for (let i = dates.length - 1; i >= 0; i--) {
+                        if (dates[i] < this.currentDate && this.logs[dates[i]].meals.length > 0) {
+                            prevDate = dates[i];
+                            break;
+                        }
+                    }
+                    if (!prevDate) return this.showAlert('没有找到近期的饮食记录！');
+
+                    const prevLog = JSON.parse(JSON.stringify(this.logs[prevDate]));
+                    this.currentLog.meals = prevLog.meals;
+                    this.currentLog.templateName = prevLog.templateName || '复制记录';
+                    
+                    // 同步目标的总数
+                    let sumP = 0, sumC = 0, sumF = 0;
+                    prevLog.meals.forEach(m => { sumP += m.target.p||0; sumC += m.target.c||0; sumF += m.target.f||0; });
+                    this.targets = { protein: sumP, carbs: sumC, fat: sumF, calories: (sumP*4 + sumC*4 + sumF*9) };
+                    
+                    this.saveData();
+                    this.showAlert(`✅ 已成功复制 ${prevDate} 的记录！`);
+                },
 
                 addMeal() { this.currentLog.meals.push({ name: `第${this.currentLog.meals.length + 1}餐`, target: {p:0,c:0,f:0}, items: [] }); this.saveData(); },
                 removeMeal(index) { if(confirm('删除此餐？')) { this.currentLog.meals.splice(index, 1); this.saveData(); } },
                 addFood(mealIndex) {
-                    const keys = Object.keys(this.foods); if (keys.length === 0) return this.showAlert('请添加食物库！');
-                    this.currentLog.meals[mealIndex].items.push({ food: keys[0], amount: '' }); this.saveData();
+                    const keys = Object.keys(this.foods); if (keys.length === 0) return this.showAlert('请先在下方添加食物库！');
+                    this.currentLog.meals[mealIndex].items.push({ type: 'normal', food: keys[0], amount: '' }); this.saveData();
+                },
+                // 快捷打卡录入
+                addQuickFood(mealIndex) {
+                    this.currentLog.meals[mealIndex].items.push({ type: 'quick', name: '', p: '', c: '', f: '' });
+                    this.saveData();
                 },
                 removeFood(mealIndex, foodIndex) { this.currentLog.meals[mealIndex].items.splice(foodIndex, 1); this.saveData(); },
                 
@@ -538,15 +547,30 @@
                 getMealTotals(meal) {
                     let p = 0, c = 0, f = 0;
                     meal.items.forEach(item => {
-                        const food = this.foods[item.food];
-                        if (food && item.amount) { p += food.protein * parseFloat(item.amount); c += food.carbs * parseFloat(item.amount); f += food.fat * parseFloat(item.amount); }
+                        if (!item.type || item.type === 'normal') {
+                            const food = this.foods[item.food];
+                            if (food && item.amount) { 
+                                p += food.protein * parseFloat(item.amount); 
+                                c += food.carbs * parseFloat(item.amount); 
+                                f += food.fat * parseFloat(item.amount); 
+                            }
+                        } else if (item.type === 'quick') {
+                            p += parseFloat(item.p || 0);
+                            c += parseFloat(item.c || 0);
+                            f += parseFloat(item.f || 0);
+                        }
                     });
                     return { p, c, f, cal: p*4 + c*4 + f*9 };
                 },
                 getFoodMacros(item) {
-                    const f = this.foods[item.food]; if(!f || !item.amount) return 'P:0 C:0 F:0';
-                    const p = (f.protein * item.amount), c = (f.carbs * item.amount), fat = (f.fat * item.amount);
-                    return `P:${p.toFixed(1)} C:${c.toFixed(1)} F:${fat.toFixed(1)} | ${(p*4+c*4+fat*9).toFixed(0)}kcal`;
+                    if (!item.type || item.type === 'normal') {
+                        const f = this.foods[item.food]; if(!f || !item.amount) return 'P:0 C:0 F:0';
+                        const p = (f.protein * item.amount), c = (f.carbs * item.amount), fat = (f.fat * item.amount);
+                        return `P:${p.toFixed(1)} C:${c.toFixed(1)} F:${fat.toFixed(1)} | ${(p*4+c*4+fat*9).toFixed(0)}kcal`;
+                    } else if (item.type === 'quick') {
+                        const p = parseFloat(item.p || 0), c = parseFloat(item.c || 0), fat = parseFloat(item.f || 0);
+                        return `P:${p.toFixed(1)} C:${c.toFixed(1)} F:${fat.toFixed(1)} | ${(p*4+c*4+fat*9).toFixed(0)}kcal`;
+                    }
                 },
 
                 // 转移剩余额度逻辑

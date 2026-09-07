@@ -1,5 +1,5 @@
-// 每次修改了 index.html 的功能，请务必把这里的 v2 改成 v3、v4...
-const CACHE_NAME = 'diet-max-cache-v3';
+// 每次修改了 index.html 的功能，请务必把这里的版本号往上加 (如 v4 -> v5)
+const CACHE_NAME = 'diet-max-cache-v4';
 const urlsToCache = [
     './index.html',
     './manifest.json'
