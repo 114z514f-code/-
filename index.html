@@ -158,6 +158,9 @@
                                     <button @click="openTransfer(mIndex)" class="text-blue-500 text-xs font-bold bg-blue-50 px-2 py-1 rounded shadow-sm border border-blue-100">
                                         🔄 转移超出
                                     </button>
+                                    <button @click="openGapTransfer(mIndex)" class="text-orange-500 text-xs font-bold bg-orange-50 px-2 py-1 rounded shadow-sm border border-orange-100">
+                                        ↔️ 转移空缺
+                                    </button>
                                     <button v-if="currentLog.transfers && currentLog.transfers.length" @click="undoLastTransfer" class="text-gray-500 text-xs font-bold bg-gray-100 px-2 py-1 rounded shadow-sm border border-gray-200">
                                         ↩️ 撤销
                                     </button>
@@ -170,13 +173,13 @@
                             
                             <div class="grid grid-cols-3 gap-2 text-[10px] font-bold text-gray-600">
                                 <div>
-                                    <div class="flex justify-between mb-0.5"><span>P</span> <span>{{ getMealEffectiveTotal(mIndex, 'p').toFixed(0) }}/{{meal.target.p}}</span></div>
-                                    <div class="w-full bg-gray-200 h-1 rounded-full"><div :class="['h-1 rounded-full', progressBarColor(getMealEffectiveTotal(mIndex, 'p'), meal.target.p)]" :style="{width: Math.min((getMealEffectiveTotal(mIndex, 'p')/(meal.target.p||1))*100, 100)+'%'}"></div></div>
+                                    <div class="flex justify-between mb-0.5"><span>P</span> <span>{{ getMealTotals(meal).p.toFixed(0) }}/{{getMealDisplayTarget(mIndex, 'p')}}</span></div>
+                                    <div class="w-full bg-gray-200 h-1 rounded-full"><div :class="['h-1 rounded-full', progressBarColor(getMealTotals(meal).p, getMealDisplayTarget(mIndex, 'p'))]" :style="{width: Math.min((getMealTotals(meal).p/(getMealDisplayTarget(mIndex, 'p')||1))*100, 100)+'%'}"></div></div>
                                     <div class="mt-0.5 text-[9px]" :class="mealMacroStatusClass(mIndex,'p')">{{ mealMacroStatusText(mIndex,'p') }}</div>
                                 </div>
                                 <div>
-                                    <div class="flex justify-between mb-0.5"><span>C</span> <span>{{ getMealEffectiveTotal(mIndex, 'c').toFixed(0) }}/{{meal.target.c}}</span></div>
-                                    <div class="w-full bg-gray-200 h-1 rounded-full"><div :class="['h-1 rounded-full', progressBarColor(getMealEffectiveTotal(mIndex, 'c'), meal.target.c)]" :style="{width: Math.min((getMealEffectiveTotal(mIndex, 'c')/(meal.target.c||1))*100, 100)+'%'}"></div></div>
+                                    <div class="flex justify-between mb-0.5"><span>C</span> <span>{{ getMealTotals(meal).c.toFixed(0) }}/{{getMealDisplayTarget(mIndex, 'c')}}</span></div>
+                                    <div class="w-full bg-gray-200 h-1 rounded-full"><div :class="['h-1 rounded-full', progressBarColor(getMealTotals(meal).c, getMealDisplayTarget(mIndex, 'c'))]" :style="{width: Math.min((getMealTotals(meal).c/(getMealDisplayTarget(mIndex, 'c')||1))*100, 100)+'%'}"></div></div>
                                     <div class="mt-0.5 text-[9px]" :class="mealMacroStatusClass(mIndex,'c')">{{ mealMacroStatusText(mIndex,'c') }}</div>
                                 </div>
                                 <div>
@@ -448,6 +451,44 @@
             </div>
         </transition>
 
+        <!-- 模态框：转移空缺营养素 -->
+        <transition name="modal">
+            <div v-if="showGapTransferModal" class="fixed inset-0 z-[56] flex flex-col justify-center items-center bg-black bg-opacity-40 p-4">
+                <div class="bg-white rounded-xl w-full max-w-sm overflow-hidden shadow-xl">
+                    <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                        <h2 class="text-base font-bold text-gray-800">↔️ 转移未完成的 P / C 空缺</h2>
+                        <button @click="showGapTransferModal = false" class="text-gray-500 font-bold text-xl leading-none">&times;</button>
+                    </div>
+                    <div class="p-4 space-y-4">
+                        <div class="text-sm text-gray-600">
+                            从 <span class="font-bold text-orange-600">{{ currentLog.meals[gapTransferData.sourceIndex]?.name }}</span>
+                            把本餐还没有吃完的 P / C 空缺，分配给另一餐。
+                            <div class="text-[10px] text-gray-400 mt-1">原始配额不会减少；接收餐会在原配额基础上增加对应额度，例如原来 0/4，转入 2g 后显示 0/6。</div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button @click="selectGapTransferNutrient('p')" :class="gapTransferData.nutrient === 'p' ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-blue-700 border-blue-200'" class="border rounded-lg p-2.5 text-center shadow-sm">
+                                <div class="text-xs font-bold">转 P 空缺</div><div class="text-sm font-black mt-0.5">可转 {{ gapTransferData.p }}g</div>
+                            </button>
+                            <button @click="selectGapTransferNutrient('c')" :class="gapTransferData.nutrient === 'c' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-green-700 border-green-200'" class="border rounded-lg p-2.5 text-center shadow-sm">
+                                <div class="text-xs font-bold">转 C 空缺</div><div class="text-sm font-black mt-0.5">可转 {{ gapTransferData.c }}g</div>
+                            </button>
+                        </div>
+                        <button @click="selectGapTransferNutrient('all')" :class="gapTransferData.nutrient === 'all' ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-indigo-50 text-indigo-700 border-indigo-200'" class="w-full border rounded-lg p-2.5 text-sm font-bold shadow-sm">
+                            ✅ P + C 全部空缺转移 <span class="font-normal ml-1">（P {{ gapTransferData.p }}g / C {{ gapTransferData.c }}g）</span>
+                        </button>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-bold text-gray-700 whitespace-nowrap">转移至：</span>
+                            <select v-model="gapTransferData.targetIndex" class="border border-gray-300 p-2 rounded flex-grow text-sm focus:outline-none bg-white">
+                                <option value="" disabled>选择接收餐次...</option>
+                                <option v-for="(m, idx) in currentLog.meals" :value="idx" :disabled="idx === gapTransferData.sourceIndex">{{ m.name }}</option>
+                            </select>
+                        </div>
+                        <button @click="confirmGapTransfer" class="w-full bg-orange-500 text-white py-2.5 rounded-lg text-sm font-bold active:bg-orange-600 shadow-sm">确认转移空缺</button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
         <!-- 模态框：转移超出营养素 -->
         <transition name="modal">
             <div v-if="showTransferModal" class="fixed inset-0 z-[55] flex flex-col justify-center items-center bg-black bg-opacity-40 p-4">
@@ -516,71 +557,67 @@
 
         // 训练时间 -> 实际餐次顺序。这里只自动分配【碳水 C / 蛋白质 P】，脂肪 F 完全由用户自己决定。
         // 4 餐基础配额来自用户图片：C 20% / 35% / 35% / 10%，P 20% / 30% / 30% / 20%。
-        // 训练时间 -> 直接按“原计划配额”换位置。
-        // 图片中的训练日基础配额：
-        // 早餐 C61/P20；其他餐① C101/P29；练前 C46/P0；练后 C107/P29；其他餐② C31/P20。
-        // 切换训练时间时，不再按总量重新计算比例，而是按下面每种情况明确换位/合并。
         const TRAINING_SCHEDULES = {
             "早饭后练（早起版）": {
-                desc: "早饭同时承担早餐+练前；训练后进入练后餐；午饭、晚饭分别使用两档其他餐配额。脂肪 F 不自动分配。",
+                desc: "早饭承担练前；训练后进入练后餐；两顿其他餐按图片中的 C/P 配额分配。脂肪不自动分配。",
                 slots: [
-                    { source: 'breakfast', name: '早饭', role: 'pre', roleText: '练前餐', p: 20, c: 61 + 46 },
-                    { source: 'post', name: '练后餐', role: 'post', roleText: '练后餐', p: 29, c: 107 },
-                    { source: 'lunch', name: '午饭', role: 'other', roleText: '其他餐', p: 29, c: 101 },
-                    { source: 'dinner', name: '晚饭', role: 'other', roleText: '其他餐', p: 20, c: 31 }
+                    { source: 'breakfast', name: '早饭', role: 'pre', roleText: '练前餐', cRatio: 0.20, pRatio: 0.20 },
+                    { source: 'post', name: '练后餐', role: 'post', roleText: '练后餐', cRatio: 0.35, pRatio: 0.30 },
+                    { source: 'lunch', name: '午饭', role: 'other', roleText: '其他餐', cRatio: 0.35, pRatio: 0.30 },
+                    { source: 'dinner', name: '晚饭', role: 'other', roleText: '其他餐', cRatio: 0.10, pRatio: 0.20 }
                 ]
             },
             "早饭后练（晚起版）": {
-                desc: "早饭承担练前；训练后吃午饭；晚饭承担两档其他餐配额。这里直接按原计划配额换位，不再按总量重新拉比例。脂肪 F 不自动分配。",
+                desc: "早饭为练前、午饭为练后、晚饭为其他餐；原练前配额并入另外两餐。脂肪不自动分配。",
                 slots: [
-                    { source: 'breakfast', name: '早饭', role: 'pre', roleText: '练前餐', p: 20, c: 61 + 46 },
-                    { source: 'lunch', name: '午饭', role: 'post', roleText: '练后餐', p: 29, c: 107 },
-                    { source: 'dinner', name: '晚饭', role: 'other', roleText: '其他餐', p: 29 + 20, c: 101 + 31 }
+                    { source: 'breakfast', name: '早饭', role: 'pre', roleText: '练前餐', cRatio: 0.20, pRatio: 0.20 },
+                    { source: 'lunch', name: '午饭', role: 'post', roleText: '练后餐', cRatio: 0.40, pRatio: 0.40 },
+                    { source: 'dinner', name: '晚饭', role: 'other', roleText: '其他餐', cRatio: 0.40, pRatio: 0.40 }
                 ]
             },
             "午饭前练": {
-                desc: "早饭；练前餐；训练后午饭；晚饭承担两档其他餐配额。直接换位置，脂肪 F 不自动分配。",
+                desc: "早饭；练前餐；训练后午饭；晚饭为其他餐。采用图片中的 C/P 配额。",
                 slots: [
-                    { source: 'breakfast', name: '早饭', role: 'breakfast', roleText: '早餐', p: 20, c: 61 },
-                    { source: 'pre', name: '练前餐', role: 'pre', roleText: '练前餐', p: 0, c: 46 },
-                    { source: 'lunch', name: '午饭', role: 'post', roleText: '练后餐', p: 29, c: 107 },
-                    { source: 'dinner', name: '晚饭', role: 'other', roleText: '其他餐', p: 29 + 20, c: 101 + 31 }
+                    { source: 'breakfast', name: '早饭', role: 'breakfast', roleText: '早餐', cRatio: 0.20, pRatio: 0.20 },
+                    { source: 'pre', name: '练前餐', role: 'pre', roleText: '练前餐', cRatio: 0.35, pRatio: 0.30 },
+                    { source: 'lunch', name: '午饭', role: 'post', roleText: '练后餐', cRatio: 0.35, pRatio: 0.30 },
+                    { source: 'dinner', name: '晚饭', role: 'other', roleText: '其他餐', cRatio: 0.10, pRatio: 0.20 }
                 ]
             },
             "午饭后练": {
-                desc: "早饭；午饭为练前；训练后进入练后餐；晚饭承担两档其他餐配额。直接换位置，脂肪 F 不自动分配。",
+                desc: "早饭；午饭为练前；训练后单独练后餐；晚饭为其他餐。采用图片中的 C/P 配额。",
                 slots: [
-                    { source: 'breakfast', name: '早饭', role: 'breakfast', roleText: '早餐', p: 20, c: 61 },
-                    { source: 'lunch', name: '午饭', role: 'pre', roleText: '练前餐', p: 0, c: 46 },
-                    { source: 'post', name: '练后餐', role: 'post', roleText: '练后餐', p: 29, c: 107 },
-                    { source: 'dinner', name: '晚饭', role: 'other', roleText: '其他餐', p: 29 + 20, c: 101 + 31 }
+                    { source: 'breakfast', name: '早饭', role: 'breakfast', roleText: '早餐', cRatio: 0.20, pRatio: 0.20 },
+                    { source: 'lunch', name: '午饭', role: 'pre', roleText: '练前餐', cRatio: 0.35, pRatio: 0.30 },
+                    { source: 'post', name: '练后餐', role: 'post', roleText: '练后餐', cRatio: 0.35, pRatio: 0.30 },
+                    { source: 'dinner', name: '晚饭', role: 'other', roleText: '其他餐', cRatio: 0.10, pRatio: 0.20 }
                 ]
             },
             "晚饭前练": {
-                desc: "早饭；午饭为其他餐；练前餐后训练；晚饭为练后餐并承接第二档其他餐配额。直接换位置，脂肪 F 不自动分配。",
+                desc: "早饭；午饭为其他餐；练前餐后训练；晚饭直接作为练后餐。采用图片中的 C/P 配额。",
                 slots: [
-                    { source: 'breakfast', name: '早饭', role: 'breakfast', roleText: '早餐', p: 20, c: 61 },
-                    { source: 'lunch', name: '午饭', role: 'other', roleText: '其他餐', p: 29, c: 101 },
-                    { source: 'pre', name: '练前餐', role: 'pre', roleText: '练前餐', p: 0, c: 46 },
-                    { source: 'dinner', name: '晚饭', role: 'post', roleText: '练后餐', p: 29 + 20, c: 107 + 31 }
+                    { source: 'breakfast', name: '早饭', role: 'breakfast', roleText: '早餐', cRatio: 0.20, pRatio: 0.20 },
+                    { source: 'lunch', name: '午饭', role: 'other', roleText: '其他餐', cRatio: 0.10, pRatio: 0.20 },
+                    { source: 'pre', name: '练前餐', role: 'pre', roleText: '练前餐', cRatio: 0.35, pRatio: 0.30 },
+                    { source: 'dinner', name: '晚饭', role: 'post', roleText: '练后餐', cRatio: 0.35, pRatio: 0.30 }
                 ]
             },
             "晚饭后练": {
-                desc: "早饭；午饭为其他餐；晚饭为练前；训练后进入练后餐并承接第二档其他餐配额。直接换位置，脂肪 F 不自动分配。",
+                desc: "早饭；午饭为其他餐；晚饭为练前；训练后再吃练后餐。采用图片中的 C/P 配额。",
                 slots: [
-                    { source: 'breakfast', name: '早饭', role: 'breakfast', roleText: '早餐', p: 20, c: 61 },
-                    { source: 'lunch', name: '午饭', role: 'other', roleText: '其他餐', p: 29, c: 101 },
-                    { source: 'dinner', name: '晚饭', role: 'pre', roleText: '练前餐', p: 0, c: 46 },
-                    { source: 'post', name: '练后餐', role: 'post', roleText: '练后餐', p: 29 + 20, c: 107 + 31 }
+                    { source: 'breakfast', name: '早饭', role: 'breakfast', roleText: '早餐', cRatio: 0.20, pRatio: 0.20 },
+                    { source: 'lunch', name: '午饭', role: 'other', roleText: '其他餐', cRatio: 0.10, pRatio: 0.20 },
+                    { source: 'dinner', name: '晚饭', role: 'pre', roleText: '练前餐', cRatio: 0.35, pRatio: 0.30 },
+                    { source: 'post', name: '练后餐', role: 'post', roleText: '练后餐', cRatio: 0.35, pRatio: 0.30 }
                 ]
             },
             "晚饭后更晚练": {
-                desc: "晚间训练较晚：早饭、午饭、晚饭三餐尽量均摊，练后餐稍大。脂肪 F 完全由你自己定。",
+                desc: "早饭、午饭、晚饭比较均摊，练后餐稍大；脂肪完全由你自己定。",
                 slots: [
-                    { source: 'breakfast', name: '早饭', role: 'other', roleText: '其他餐', p: 24, c: 82 },
-                    { source: 'lunch', name: '午饭', role: 'other', roleText: '其他餐', p: 24, c: 82 },
-                    { source: 'dinner', name: '晚饭', role: 'other', roleText: '其他餐', p: 20, c: 82 },
-                    { source: 'post', name: '练后餐', role: 'post', roleText: '练后餐', p: 30, c: 100 }
+                    { source: 'breakfast', name: '早饭', role: 'other', roleText: '其他餐', cRatio: 0.23, pRatio: 0.23 },
+                    { source: 'lunch', name: '午饭', role: 'other', roleText: '其他餐', cRatio: 0.23, pRatio: 0.23 },
+                    { source: 'dinner', name: '晚饭', role: 'other', roleText: '其他餐', cRatio: 0.23, pRatio: 0.23 },
+                    { source: 'post', name: '练后餐', role: 'post', roleText: '练后餐', cRatio: 0.31, pRatio: 0.31 }
                 ]
             }
         };
@@ -595,7 +632,9 @@
                     showTemplateModal: false,
                     showWeeklyModal: false,
                     showTransferModal: false,
+                    showGapTransferModal: false,
                     transferData: { sourceIndex: null, targetIndex: '', nutrient: 'all', p: 0, c: 0 },
+                    gapTransferData: { sourceIndex: null, targetIndex: '', nutrient: 'all', p: 0, c: 0 },
                     alertMsg: '',
                     newTemplateName: '',
                     logs: JSON.parse(localStorage.getItem('diet_logs_max')) || {},
@@ -779,12 +818,23 @@
                 roundTarget(v) { return parseFloat((Number(v) || 0).toFixed(1)); },
 
                 allocateScheduleTargets(slots) {
-                    // 这里不是“重新计算比例”，而是直接使用每种训练时段预设好的 P/C 配额。
-                    // 这样切换训练时间本质上就是把原计划的配额换到对应餐次。
-                    slots.forEach(slot => {
-                        slot.target = slot.target || {};
-                        slot.target.p = this.roundTarget(slot.p);
-                        slot.target.c = this.roundTarget(slot.c);
+                    const totals = {
+                        p: parseFloat(this.targets.protein || 0),
+                        c: parseFloat(this.targets.carbs || 0)
+                    };
+                    ['p','c'].forEach(k => {
+                        let used = 0;
+                        slots.forEach((slot, idx) => {
+                            const ratio = k === 'p' ? Number(slot.pRatio || 0) : Number(slot.cRatio || 0);
+                            slot.target = slot.target || {};
+                            if (idx === slots.length - 1) {
+                                slot.target[k] = this.roundTarget(Math.max(0, totals[k] - used));
+                            } else {
+                                const value = this.roundTarget(Math.max(0, totals[k] * ratio));
+                                slot.target[k] = value;
+                                used += value;
+                            }
+                        });
                     });
                 },
 
@@ -875,29 +925,35 @@
                     if (!this.currentLog.transfers) this.currentLog.transfers = [];
                     return this.currentLog.transfers;
                 },
+                getTransferKind(t) {
+                    return t && t.kind === 'gap' ? 'gap' : 'surplus';
+                },
                 transferNet(mealIndex, nutrient) {
-                    let inbound = 0, outbound = 0;
+                    let inbound = 0, outboundSurplus = 0, outboundGap = 0;
                     this.getTransferLedger().forEach(t => {
                         const value = Number(t[nutrient] || 0);
+                        const kind = this.getTransferKind(t);
                         if (Number(t.to) === Number(mealIndex)) inbound += value;
-                        if (Number(t.from) === Number(mealIndex)) outbound += value;
+                        if (Number(t.from) === Number(mealIndex)) {
+                            if (kind === 'gap') outboundGap += value;
+                            else outboundSurplus += value;
+                        }
                     });
-                    return { inbound, outbound };
+                    return { inbound, outboundSurplus, outboundGap, outbound: outboundSurplus + outboundGap };
                 },
-                getMealEffectiveTotal(mealIndex, nutrient) {
+                getMealDisplayTarget(mealIndex, nutrient) {
                     const meal = this.currentLog.meals[mealIndex];
                     if (!meal) return 0;
-                    const actual = Number(this.getMealTotals(meal)[nutrient] || 0);
+                    const target = Number(meal.target?.[nutrient] || 0);
                     const net = this.transferNet(mealIndex, nutrient);
-                    return Math.max(0, actual + net.inbound - net.outbound);
+                    return this.roundTarget(target + net.inbound);
                 },
                 getMealRemaining(mealIndex, nutrient) {
                     const meal = this.currentLog.meals[mealIndex];
                     if (!meal) return 0;
                     const actual = Number(this.getMealTotals(meal)[nutrient] || 0);
-                    const target = Number(meal.target?.[nutrient] || 0);
-                    const net = this.transferNet(mealIndex, nutrient);
-                    return target - actual - net.inbound + net.outbound;
+                    const displayTarget = this.getMealDisplayTarget(mealIndex, nutrient);
+                    return displayTarget - actual;
                 },
                 getTransferableSurplus(mealIndex, nutrient) {
                     const meal = this.currentLog.meals[mealIndex];
@@ -905,14 +961,27 @@
                     const actual = Number(this.getMealTotals(meal)[nutrient] || 0);
                     const target = Number(meal.target?.[nutrient] || 0);
                     const net = this.transferNet(mealIndex, nutrient);
-                    return Math.max(0, actual - target + net.inbound - net.outbound);
+                    return Math.max(0, actual - target - net.inbound - net.outboundSurplus);
+                },
+                getTransferableGap(mealIndex, nutrient) {
+                    const meal = this.currentLog.meals[mealIndex];
+                    if (!meal) return 0;
+                    const actual = Number(this.getMealTotals(meal)[nutrient] || 0);
+                    const target = Number(meal.target?.[nutrient] || 0);
+                    const net = this.transferNet(mealIndex, nutrient);
+                    return Math.max(0, target + net.inbound - actual - net.outboundGap);
                 },
                 mealMacroStatusText(mealIndex, nutrient) {
                     const remain = this.getMealRemaining(mealIndex, nutrient);
                     const surplus = this.getTransferableSurplus(mealIndex, nutrient);
-                    if (surplus >= 0.05) return `超出 ${surplus.toFixed(1)}g`;
-                    if (remain > 0.05) return `还差 ${remain.toFixed(1)}g`;
-                    return '已达标';
+                    const net = this.transferNet(mealIndex, nutrient);
+                    let text = '';
+                    if (surplus >= 0.05) text = `超出 ${surplus.toFixed(1)}g`;
+                    else if (remain > 0.05) text = `还差 ${remain.toFixed(1)}g`;
+                    else text = '已达标';
+                    if (net.outbound > 0.05) text += ` · 已转出 ${net.outbound.toFixed(1)}g`;
+                    if (net.inbound > 0.05) text += ` · 已转入 ${net.inbound.toFixed(1)}g`;
+                    return text;
                 },
                 mealMacroStatusClass(mealIndex, nutrient) {
                     const remain = this.getMealRemaining(mealIndex, nutrient);
@@ -960,6 +1029,37 @@
                     this.showTransferModal = true;
                 },
 
+                openGapTransfer(mIndex) {
+                    if (!this.isTrainingDay) return this.showAlert('“转移空缺”只在训练日开放。');
+                    const gapP = this.getTransferableGap(mIndex, 'p');
+                    const gapC = this.getTransferableGap(mIndex, 'c');
+                    if (gapP < 0.05 && gapC < 0.05) return this.showAlert('该餐次目前没有可转移的 P / C 空缺。');
+                    this.gapTransferData = { sourceIndex: mIndex, targetIndex: '', nutrient: 'all', p: this.roundTarget(gapP), c: this.roundTarget(gapC) };
+                    this.showGapTransferModal = true;
+                },
+                selectGapTransferNutrient(type) { this.gapTransferData.nutrient = type; },
+                confirmGapTransfer() {
+                    if (this.gapTransferData.targetIndex === '' || Number(this.gapTransferData.targetIndex) === Number(this.gapTransferData.sourceIndex)) return this.showAlert('请选择一个有效的接收餐次');
+                    const srcIndex = Number(this.gapTransferData.sourceIndex);
+                    const destIndex = Number(this.gapTransferData.targetIndex);
+                    const nutrient = this.gapTransferData.nutrient;
+                    const move = { p: 0, c: 0 };
+                    if (nutrient === 'p') move.p = this.getTransferableGap(srcIndex, 'p');
+                    else if (nutrient === 'c') move.c = this.getTransferableGap(srcIndex, 'c');
+                    else {
+                        move.p = this.getTransferableGap(srcIndex, 'p');
+                        move.c = this.getTransferableGap(srcIndex, 'c');
+                    }
+                    move.p = this.roundTarget(move.p);
+                    move.c = this.roundTarget(move.c);
+                    if (move.p < 0.05 && move.c < 0.05) return this.showAlert('当前没有可转移的 P / C 空缺。');
+                    this.getTransferLedger().push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2), from: srcIndex, to: destIndex, p: move.p, c: move.c, kind: 'gap', createdAt: new Date().toISOString() });
+                    this.saveData();
+                    this.showGapTransferModal = false;
+                    const nutrientText = nutrient === 'p' ? `P ${move.p}g` : (nutrient === 'c' ? `C ${move.c}g` : `P ${move.p}g / C ${move.c}g`);
+                    this.showAlert(`✅ 已把 ${nutrientText} 空缺转到 ${this.currentLog.meals[destIndex].name}，原配额没有变化！`);
+                },
+
                 selectTransferNutrient(type) { this.transferData.nutrient = type; },
 
                 getTransferRecommendation() {
@@ -1000,7 +1100,7 @@
                     move.c = this.roundTarget(move.c);
                     if (move.p < 0.05 && move.c < 0.05) return this.showAlert('当前没有可转移的 P / C 超出部分。');
 
-                    this.getTransferLedger().push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2), from: srcIndex, to: destIndex, p: move.p, c: move.c, createdAt: new Date().toISOString() });
+                    this.getTransferLedger().push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2), from: srcIndex, to: destIndex, p: move.p, c: move.c, kind: 'surplus', createdAt: new Date().toISOString() });
                     this.saveData();
                     this.showTransferModal = false;
                     const nutrientText = nutrient === 'p' ? `P ${move.p}g` : (nutrient === 'c' ? `C ${move.c}g` : `P ${move.p}g / C ${move.c}g`);
