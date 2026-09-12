@@ -167,8 +167,8 @@
                                     <button @click="removeMeal(mIndex)" class="text-red-400 text-xs px-2">删除</button>
                                 </div>
                             </div>
-                            <div v-if="isTrainingDay" class="text-[10px] text-blue-500 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1.5 mb-2">
-                                训练日：P / C 吃超出后，可以把超出的克数直接转到其他餐；原始配额不会被改动。每餐会显示还差多少或超出多少。脂肪 F 由你自己定。
+                            <div class="text-[10px] text-blue-500 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1.5 mb-2">
+                                P / C 吃超出后，可以把超出的克数直接转到其他餐；原始配额不会被改动。每餐会显示还差多少或超出多少。
                             </div>
                             
                             <div class="grid grid-cols-3 gap-2 text-[10px] font-bold text-gray-600">
@@ -1036,7 +1036,6 @@
                 },
 
                 openTransfer(mIndex) {
-                    if (!this.isTrainingDay) return this.showAlert('“转移超出”只在训练日开放。');
                     const overP = this.getTransferableSurplus(mIndex, 'p');
                     const overC = this.getTransferableSurplus(mIndex, 'c');
                     if (overP < 0.05 && overC < 0.05) return this.showAlert('该餐次目前没有可转移的 P / C 超出部分。');
@@ -1045,7 +1044,6 @@
                 },
 
                 openGapTransfer(mIndex) {
-                    if (!this.isTrainingDay) return this.showAlert('“转移空缺”只在训练日开放。');
                     const gapP = this.getTransferableGap(mIndex, 'p');
                     const gapC = this.getTransferableGap(mIndex, 'c');
                     if (gapP < 0.05 && gapC < 0.05) return this.showAlert('该餐次目前没有可转移的 P / C 空缺。');
@@ -1285,7 +1283,7 @@
                 this.saveData();
                 // 注册 PWA Service Worker
                 if ('serviceWorker' in navigator) {
-                    navigator.serviceWorker.register('./sw.js').then(() => console.log('PWA Ready'));
+                    navigator.serviceWorker.register('./sw.js?v=8').then(() => console.log('PWA Ready'));
                 }
             }
         }).mount('#app');
