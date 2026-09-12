@@ -173,13 +173,13 @@
                             
                             <div class="grid grid-cols-3 gap-2 text-[10px] font-bold text-gray-600">
                                 <div>
-                                    <div class="flex justify-between mb-0.5"><span>P</span> <span>{{ getMealTotals(meal).p.toFixed(0) }}/{{getMealDisplayTarget(mIndex, 'p')}}</span></div>
-                                    <div class="w-full bg-gray-200 h-1 rounded-full"><div :class="['h-1 rounded-full', progressBarColor(getMealTotals(meal).p, getMealDisplayTarget(mIndex, 'p'))]" :style="{width: Math.min((getMealTotals(meal).p/(getMealDisplayTarget(mIndex, 'p')||1))*100, 100)+'%'}"></div></div>
+                                    <div class="flex justify-between mb-0.5"><span>P</span> <span>{{ getMealDisplayActual(mIndex, 'p').toFixed(0) }}/{{getMealDisplayTarget(mIndex, 'p')}}</span></div>
+                                    <div class="w-full bg-gray-200 h-1 rounded-full"><div :class="['h-1 rounded-full', progressBarColor(getMealDisplayActual(mIndex, 'p'), getMealDisplayTarget(mIndex, 'p'))]" :style="{width: Math.min((getMealDisplayActual(mIndex, 'p')/(getMealDisplayTarget(mIndex, 'p')||1))*100, 100)+'%'}"></div></div>
                                     <div class="mt-0.5 text-[9px]" :class="mealMacroStatusClass(mIndex,'p')">{{ mealMacroStatusText(mIndex,'p') }}</div>
                                 </div>
                                 <div>
-                                    <div class="flex justify-between mb-0.5"><span>C</span> <span>{{ getMealTotals(meal).c.toFixed(0) }}/{{getMealDisplayTarget(mIndex, 'c')}}</span></div>
-                                    <div class="w-full bg-gray-200 h-1 rounded-full"><div :class="['h-1 rounded-full', progressBarColor(getMealTotals(meal).c, getMealDisplayTarget(mIndex, 'c'))]" :style="{width: Math.min((getMealTotals(meal).c/(getMealDisplayTarget(mIndex, 'c')||1))*100, 100)+'%'}"></div></div>
+                                    <div class="flex justify-between mb-0.5"><span>C</span> <span>{{ getMealDisplayActual(mIndex, 'c').toFixed(0) }}/{{getMealDisplayTarget(mIndex, 'c')}}</span></div>
+                                    <div class="w-full bg-gray-200 h-1 rounded-full"><div :class="['h-1 rounded-full', progressBarColor(getMealDisplayActual(mIndex, 'c'), getMealDisplayTarget(mIndex, 'c'))]" :style="{width: Math.min((getMealDisplayActual(mIndex, 'c')/(getMealDisplayTarget(mIndex, 'c')||1))*100, 100)+'%'}"></div></div>
                                     <div class="mt-0.5 text-[9px]" :class="mealMacroStatusClass(mIndex,'c')">{{ mealMacroStatusText(mIndex,'c') }}</div>
                                 </div>
                                 <div>
@@ -463,7 +463,7 @@
                         <div class="text-sm text-gray-600">
                             从 <span class="font-bold text-orange-600">{{ currentLog.meals[gapTransferData.sourceIndex]?.name }}</span>
                             把本餐还没有吃完的 P / C 空缺，分配给另一餐。
-                            <div class="text-[10px] text-gray-400 mt-1">原始配额不会减少；接收餐会在原配额基础上增加对应额度，例如原来 0/4，转入 2g 后显示 0/6。</div>
+                            <div class="text-[10px] text-gray-400 mt-1">原餐会减少已转出的空缺额度，接收餐会增加对应额度；例如原来 4/6，转出 2g 后显示 4/4，接收餐原来 2/6 则显示 2/8。</div>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
                             <button @click="selectGapTransferNutrient('p')" :class="gapTransferData.nutrient === 'p' ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-blue-700 border-blue-200'" class="border rounded-lg p-2.5 text-center shadow-sm">
@@ -501,7 +501,7 @@
                         <div class="text-sm text-gray-600">
                             从 <span class="font-bold text-blue-600">{{ currentLog.meals[transferData.sourceIndex]?.name }}</span>
                             把本餐已经吃超出的克数，直接转给另一餐。
-                            <div class="text-[10px] text-gray-400 mt-1">不会修改任何一餐原来的 P/C 配额，只记录“转出/转入”。</div>
+                            <div class="text-[10px] text-gray-400 mt-1">原餐的有效实际会减少，接收餐的有效实际会增加；原始目标配额保持不变。</div>
                         </div>
                         <div class="grid grid-cols-2 gap-2">
                             <button @click="selectTransferNutrient('p')" :class="transferData.nutrient === 'p' ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-blue-700 border-blue-200'" class="border rounded-lg p-2.5 text-center shadow-sm">
@@ -929,47 +929,62 @@
                     return t && t.kind === 'gap' ? 'gap' : 'surplus';
                 },
                 transferNet(mealIndex, nutrient) {
-                    let inbound = 0, outboundSurplus = 0, outboundGap = 0;
+                    let inboundSurplus = 0, inboundGap = 0, outboundSurplus = 0, outboundGap = 0;
                     this.getTransferLedger().forEach(t => {
                         const value = Number(t[nutrient] || 0);
                         const kind = this.getTransferKind(t);
-                        if (Number(t.to) === Number(mealIndex)) inbound += value;
+                        if (Number(t.to) === Number(mealIndex)) {
+                            if (kind === 'gap') inboundGap += value;
+                            else inboundSurplus += value;
+                        }
                         if (Number(t.from) === Number(mealIndex)) {
                             if (kind === 'gap') outboundGap += value;
                             else outboundSurplus += value;
                         }
                     });
-                    return { inbound, outboundSurplus, outboundGap, outbound: outboundSurplus + outboundGap };
+                    return {
+                        inboundSurplus,
+                        inboundGap,
+                        outboundSurplus,
+                        outboundGap,
+                        inbound: inboundSurplus + inboundGap,
+                        outbound: outboundSurplus + outboundGap
+                    };
+                },
+                getMealDisplayActual(mealIndex, nutrient) {
+                    const meal = this.currentLog.meals[mealIndex];
+                    if (!meal) return 0;
+                    const actual = Number(this.getMealTotals(meal)[nutrient] || 0);
+                    const net = this.transferNet(mealIndex, nutrient);
+                    return Math.max(0, actual + net.inboundSurplus - net.outboundSurplus);
                 },
                 getMealDisplayTarget(mealIndex, nutrient) {
                     const meal = this.currentLog.meals[mealIndex];
                     if (!meal) return 0;
                     const target = Number(meal.target?.[nutrient] || 0);
                     const net = this.transferNet(mealIndex, nutrient);
-                    return this.roundTarget(target + net.inbound);
+                    return this.roundTarget(Math.max(0, target + net.inboundGap - net.outboundGap));
                 },
                 getMealRemaining(mealIndex, nutrient) {
                     const meal = this.currentLog.meals[mealIndex];
                     if (!meal) return 0;
-                    const actual = Number(this.getMealTotals(meal)[nutrient] || 0);
+                    const actual = this.getMealDisplayActual(mealIndex, nutrient);
                     const displayTarget = this.getMealDisplayTarget(mealIndex, nutrient);
                     return displayTarget - actual;
                 },
                 getTransferableSurplus(mealIndex, nutrient) {
                     const meal = this.currentLog.meals[mealIndex];
                     if (!meal) return 0;
-                    const actual = Number(this.getMealTotals(meal)[nutrient] || 0);
-                    const target = Number(meal.target?.[nutrient] || 0);
-                    const net = this.transferNet(mealIndex, nutrient);
-                    return Math.max(0, actual - target - net.inbound - net.outboundSurplus);
+                    const actual = this.getMealDisplayActual(mealIndex, nutrient);
+                    const target = this.getMealDisplayTarget(mealIndex, nutrient);
+                    return Math.max(0, actual - target);
                 },
                 getTransferableGap(mealIndex, nutrient) {
                     const meal = this.currentLog.meals[mealIndex];
                     if (!meal) return 0;
-                    const actual = Number(this.getMealTotals(meal)[nutrient] || 0);
-                    const target = Number(meal.target?.[nutrient] || 0);
-                    const net = this.transferNet(mealIndex, nutrient);
-                    return Math.max(0, target + net.inbound - actual - net.outboundGap);
+                    const actual = this.getMealDisplayActual(mealIndex, nutrient);
+                    const target = this.getMealDisplayTarget(mealIndex, nutrient);
+                    return Math.max(0, target - actual);
                 },
                 mealMacroStatusText(mealIndex, nutrient) {
                     const remain = this.getMealRemaining(mealIndex, nutrient);
