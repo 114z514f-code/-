@@ -1,0 +1,1293 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>饮食追踪系统 Max - PWA</title>
+    
+    <!-- PWA 核心配置：允许安装到桌面，全屏运行 -->
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="#3b82f6">
+    <link rel="apple-touch-icon" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48cmVjdCB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgZmlsbD0iIzNiODJmNiIvPjx0ZXh0IHg9IjUwJSIgeT0iNTAlIiBkb21pbmFudC1iYXNlbGluZT0ibWlkZGxlIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LXNpemU9IjYwIj7imqE8L3RleHQ+PC9zdmc+">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <!-- 稳定国内 CDN -->
+    <script src="https://cdn.staticfile.net/vue/3.3.4/vue.global.prod.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.staticfile.net/Chart.js/4.3.0/chart.umd.min.js"></script>
+    <script src="https://cdn.staticfile.net/lz-string/1.5.0/lz-string.min.js"></script>
+    
+    <style>
+        [v-cloak] { display: none; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 10px; }
+        .modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
+        .modal-enter-from, .modal-leave-to { opacity: 0; }
+        body { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+        input, select { -webkit-appearance: none; appearance: none; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 p-3 md:p-8 font-sans pb-24 select-none">
+    <div id="app" v-cloak class="max-w-6xl mx-auto space-y-4 relative">
+        
+        <!-- 模块1：顶栏 -->
+        <div class="flex flex-col bg-white p-4 rounded-xl shadow-sm border border-gray-200 gap-3">
+            <div class="flex justify-between items-center">
+                <h1 class="text-xl font-bold text-gray-800 flex items-center">
+                    <span class="text-blue-500 mr-2">⚡</span> Diet Max
+                </h1>
+                <div class="flex gap-2">
+                    <button @click="openWeeklyReport" class="bg-orange-50 text-orange-600 border border-orange-200 px-2 py-1 rounded text-xs font-bold hover:bg-orange-100 flex items-center">
+                        📅 周报
+                    </button>
+                    <button @click="openChart" class="bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-1 rounded text-xs font-bold hover:bg-indigo-100 flex items-center">
+                        📊 趋势
+                    </button>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <div class="flex items-center bg-blue-50 px-2 py-1.5 rounded-lg border border-blue-100 flex-1">
+                    <span class="text-blue-600 mr-1 text-xs font-bold">体重(kg)</span>
+                    <input type="number" step="0.1" v-model="currentLog.weight" class="bg-transparent w-full font-black text-blue-700 focus:outline-none" @change="saveData">
+                </div>
+                <input type="date" v-model="currentDate" class="border border-gray-200 px-2 py-1.5 rounded-lg focus:outline-none text-sm font-medium flex-1">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <!-- 左侧：日常记录 -->
+            <div class="lg:col-span-2 space-y-4">
+                
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <div class="flex flex-col gap-3 mb-4">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <h2 class="text-base font-bold text-gray-700">🚀 今日模式</h2>
+                                <p class="text-xs text-gray-500 mt-0.5" v-if="currentLog.templateName">
+                                    当前: <span class="font-bold text-blue-500">{{ currentLog.templateName }}</span>
+                                </p>
+                            </div>
+                            <button @click="showTemplateModal = true" class="bg-gray-100 text-gray-700 border border-gray-200 px-2 py-1 rounded-lg text-xs font-bold">
+                                ⚙️ 管理模板
+                            </button>
+                        </div>
+                        <div class="flex gap-2 overflow-x-auto pb-1">
+                            <button @click="copyYesterday" class="bg-orange-100 text-orange-600 border border-orange-200 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm whitespace-nowrap flex-shrink-0 flex items-center">
+                                <span class="mr-1">📋</span> 复制昨日
+                            </button>
+                            <button v-for="(tpl, tName) in templates" :key="tName" @click="applyTemplate(tName)" 
+                                    class="bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm whitespace-nowrap flex-shrink-0">
+                                应用 {{ tName }}
+                            </button>
+                        </div>
+                        <div v-if="isTrainingDay" class="bg-indigo-50 border border-indigo-200 rounded-xl p-3 space-y-2">
+                            <div class="flex items-center justify-between gap-2">
+                                <div>
+                                    <div class="text-xs font-black text-indigo-700">⏰ 训练时间 / 摄入安排</div>
+                                    <div class="text-[10px] text-indigo-500 mt-0.5">严格遵循固定配额调换，零食夜宵不变。</div>
+                                </div>
+                                <select v-model="currentLog.trainingSchedule" @change="changeTrainingSchedule" class="border border-indigo-200 bg-white rounded-lg px-2 py-1.5 text-xs font-bold text-indigo-700 focus:outline-none min-w-[150px]">
+                                    <option v-for="(cfg, key) in trainingSchedules" :key="key" :value="key">{{ key }}</option>
+                                </select>
+                            </div>
+                            <div class="text-[10px] text-gray-500 bg-white/70 rounded-lg px-2 py-1.5">
+                                {{ trainingSchedules[currentLog.trainingSchedule] ? trainingSchedules[currentLog.trainingSchedule].desc : '' }}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3">
+                        <div v-for="(val, key) in dailyTotal" :key="key" class="p-2 bg-gray-50 rounded-lg border border-gray-100">
+                            <div class="flex justify-between items-end mb-1">
+                                <span class="text-gray-500 text-xs font-medium">{{ labels[key] }}</span>
+                                <span class="text-sm font-black">{{ val.toFixed(0) }}<span class="text-[10px] text-gray-400 font-normal">/{{ targets[key] }}</span></span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-1.5">
+                                <div :class="['h-1.5 rounded-full', progressBarColor(val, targets[key])]" 
+                                     :style="{ width: Math.min((val / (targets[key]||1)) * 100, 100) + '%' }"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <div class="flex items-center justify-between mb-3">
+                        <div>
+                            <h2 class="text-base font-bold text-gray-700">📌 今日状态</h2>
+                            <p class="text-[10px] text-gray-400 mt-0.5">看总量完成度和还差多少，不自动修改你的计划</p>
+                        </div>
+                        <span v-if="isTrainingDay" class="text-[10px] font-bold px-2 py-1 rounded-full bg-orange-50 text-orange-600 border border-orange-100">训练日</span>
+                        <span v-else class="text-[10px] font-bold px-2 py-1 rounded-full bg-gray-50 text-gray-500 border border-gray-100">非训练日</span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2">
+                        <div v-for="item in dailyStatusCards" :key="item.key" class="p-2 rounded-lg border" :class="item.bg">
+                            <div class="flex justify-between items-center">
+                                <span class="text-[10px] font-bold" :class="item.text">{{ item.label }}</span>
+                                <span class="text-[9px] text-gray-500">{{ item.percent }}%</span>
+                            </div>
+                            <div class="mt-1 text-sm font-black text-gray-800">{{ item.actual.toFixed(1) }}<span class="text-[9px] font-normal text-gray-400"> / {{ item.target.toFixed(1) }}g</span></div>
+                            <div class="mt-1 text-[10px] font-bold" :class="item.remaining <= 0 ? 'text-green-600' : 'text-gray-500'">
+                                {{ item.remaining <= 0 ? '已达标' : '还差 ' + item.remaining.toFixed(1) + 'g' }}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-3 p-2 rounded-lg bg-gray-50 border border-gray-100 text-xs font-bold" :class="dailyStatusSummaryClass">
+                        {{ dailyStatusSummary }}
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-base font-bold text-gray-700">🍽️ 详细餐次打卡</h2>
+                        <button @click="addMeal" class="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded-lg font-semibold">
+                            + 临时加餐
+                        </button>
+                    </div>
+                    <div v-if="currentLog.meals.length === 0" class="text-center py-6 text-gray-400 text-xs border-2 border-dashed rounded-xl bg-gray-50">
+                        请在上方应用模板、复制昨日或加餐。
+                    </div>
+                    <div v-for="(meal, mIndex) in currentLog.meals" :key="mIndex" class="mb-4 border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                        <div class="bg-gray-50 p-2 border-b border-gray-200">
+                            <div class="flex justify-between items-center mb-2">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <input v-model="meal.name" class="font-bold text-base text-gray-700 bg-transparent focus:outline-none w-32" @change="saveData">
+                                    <span v-if="meal.roleText" class="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 whitespace-nowrap">{{ meal.roleText }}</span>
+                                </div>
+                                <div class="flex gap-2">
+                                    <button @click="openTransfer(mIndex)" class="text-blue-500 text-xs font-bold bg-blue-50 px-2 py-1 rounded shadow-sm border border-blue-100">
+                                        🔄 转移超出
+                                    </button>
+                                    <button @click="openGapTransfer(mIndex)" class="text-orange-500 text-xs font-bold bg-orange-50 px-2 py-1 rounded shadow-sm border border-orange-100">
+                                        ↔️ 转移空缺
+                                    </button>
+                                    <button v-if="currentLog.transfers && currentLog.transfers.length" @click="undoLastTransfer" class="text-gray-500 text-xs font-bold bg-gray-100 px-2 py-1 rounded shadow-sm border border-gray-200">
+                                        ↩️ 撤销
+                                    </button>
+                                    <button @click="removeMeal(mIndex)" class="text-red-400 text-xs px-2">删除</button>
+                                </div>
+                            </div>
+                            <div class="text-[10px] text-blue-500 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1.5 mb-2">
+                                P / C 吃超出后，可以把超出的克数直接转到其他餐；原始配额不会被改动。每餐会显示还差多少或超出多少。
+                            </div>
+                            
+                            <div class="grid grid-cols-3 gap-2 text-[10px] font-bold text-gray-600">
+                                <div>
+                                    <div class="flex justify-between mb-0.5"><span>P</span> <span>{{ getMealDisplayActual(mIndex, 'p').toFixed(0) }}/{{getMealDisplayTarget(mIndex, 'p')}}</span></div>
+                                    <div class="w-full bg-gray-200 h-1 rounded-full"><div :class="['h-1 rounded-full', progressBarColor(getMealDisplayActual(mIndex, 'p'), getMealDisplayTarget(mIndex, 'p'))]" :style="{width: Math.min((getMealDisplayActual(mIndex, 'p')/(getMealDisplayTarget(mIndex, 'p')||1))*100, 100)+'%'}"></div></div>
+                                    <div class="mt-0.5 text-[9px]" :class="mealMacroStatusClass(mIndex,'p')">{{ mealMacroStatusText(mIndex,'p') }}</div>
+                                </div>
+                                <div>
+                                    <div class="flex justify-between mb-0.5"><span>C</span> <span>{{ getMealDisplayActual(mIndex, 'c').toFixed(0) }}/{{getMealDisplayTarget(mIndex, 'c')}}</span></div>
+                                    <div class="w-full bg-gray-200 h-1 rounded-full"><div :class="['h-1 rounded-full', progressBarColor(getMealDisplayActual(mIndex, 'c'), getMealDisplayTarget(mIndex, 'c'))]" :style="{width: Math.min((getMealDisplayActual(mIndex, 'c')/(getMealDisplayTarget(mIndex, 'c')||1))*100, 100)+'%'}"></div></div>
+                                    <div class="mt-0.5 text-[9px]" :class="mealMacroStatusClass(mIndex,'c')">{{ mealMacroStatusText(mIndex,'c') }}</div>
+                                </div>
+                                <div>
+                                    <div class="flex justify-between mb-0.5"><span>F</span> <span>{{ getMealTotals(meal).f.toFixed(0) }}/{{meal.target.f}}</span></div>
+                                    <div class="w-full bg-gray-200 h-1 rounded-full"><div :class="['h-1 rounded-full', progressBarColor(getMealTotals(meal).f, meal.target.f)]" :style="{width: Math.min((getMealTotals(meal).f/(meal.target.f||1))*100, 100)+'%'}"></div></div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="p-2 bg-white space-y-2">
+                            <div v-for="(item, iIndex) in meal.items" :key="iIndex" class="flex flex-col gap-1 text-sm bg-gray-50 p-2 rounded relative border border-gray-100">
+                                <button @click="removeFood(mIndex, iIndex)" class="absolute top-2 right-2 text-red-400 text-lg font-bold leading-none">&times;</button>
+                                
+                                <!-- 常规食物库录入 -->
+                                <template v-if="!item.type || item.type === 'normal'">
+                                    <div class="flex justify-between items-center gap-2 pr-6">
+                                        <select v-model="item.food" class="border border-gray-200 p-1.5 rounded flex-grow text-xs bg-white focus:outline-none" @change="saveData">
+                                            <option disabled value="">选择食物</option>
+                                            <option v-for="(f, fname) in foods" :value="fname">{{ fname }}</option>
+                                        </select>
+                                        <div class="flex items-center bg-white border border-gray-200 rounded">
+                                            <input type="number" step="0.1" v-model="item.amount" placeholder="量" class="p-1.5 w-16 text-center text-xs focus:outline-none bg-transparent" @input="saveData"> 
+                                            <span class="text-gray-500 text-[10px] w-6 text-center border-l border-gray-100">{{ foods[item.food] ? (foods[item.food].unit === '1个' ? '个' : '百克') : '' }}</span>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <!-- 快捷打卡 (Quick Add) -->
+                                <template v-else-if="item.type === 'quick'">
+                                    <div class="flex flex-col gap-2 pr-6">
+                                        <input type="text" v-model="item.name" placeholder="外食/包装食品名称" class="border border-gray-200 p-1.5 rounded text-xs bg-white w-full focus:outline-none font-bold text-orange-600" @change="saveData">
+                                        <div class="grid grid-cols-3 gap-2">
+                                            <div class="flex items-center bg-white border border-gray-200 rounded p-1 shadow-sm"><span class="text-blue-500 font-bold text-[10px] w-4 text-center">P</span><input type="number" v-model="item.p" class="w-full bg-transparent text-center text-xs focus:outline-none font-bold" @input="saveData"></div>
+                                            <div class="flex items-center bg-white border border-gray-200 rounded p-1 shadow-sm"><span class="text-green-500 font-bold text-[10px] w-4 text-center">C</span><input type="number" v-model="item.c" class="w-full bg-transparent text-center text-xs focus:outline-none font-bold" @input="saveData"></div>
+                                            <div class="flex items-center bg-white border border-gray-200 rounded p-1 shadow-sm"><span class="text-yellow-500 font-bold text-[10px] w-4 text-center">F</span><input type="number" v-model="item.f" class="w-full bg-transparent text-center text-xs focus:outline-none font-bold" @input="saveData"></div>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <div class="text-gray-500 font-medium text-[10px] text-right mt-1">
+                                    {{ getFoodMacros(item) }}
+                                </div>
+                            </div>
+
+                            <!-- 添加按钮组 -->
+                            <div class="flex gap-2 mt-1">
+                                <button @click="addFood(mIndex)" class="text-blue-500 text-xs font-bold w-1/2 text-center py-2 border border-dashed border-blue-200 rounded bg-blue-50">
+                                    + 食物库录入
+                                </button>
+                                <button @click="addQuickFood(mIndex)" class="text-orange-500 text-xs font-bold w-1/2 text-center py-2 border border-dashed border-orange-200 rounded bg-orange-50">
+                                    ⚡ 快捷宏量
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧列：数据导出与管理 -->
+            <div class="space-y-4">
+                
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-blue-200 relative overflow-hidden">
+                    <h2 class="text-base font-bold text-gray-700 mb-3 flex items-center"><span class="mr-1">💾</span> 极速数据备份</h2>
+                    <div class="space-y-2">
+                        <button @click="copyDataToClipboard" class="w-full bg-indigo-500 text-white py-2.5 rounded-lg text-sm font-bold active:bg-indigo-600 flex justify-center items-center gap-1 shadow-sm">
+                            <span>📋</span> 复制压缩备份代码
+                        </button>
+                        <button @click="importFromClipboard" class="w-full bg-white border border-indigo-200 text-indigo-600 py-2 rounded-lg text-xs font-bold active:bg-indigo-50 flex justify-center items-center gap-1">
+                            <span>📥</span> 导入备份代码
+                        </button>
+                        <div class="border-t border-gray-100 my-2"></div>
+                        <button @click="mobileExportCSV" class="w-full bg-green-500 text-white py-2.5 rounded-lg text-sm font-bold active:bg-green-600 flex justify-center items-center gap-1 shadow-sm">
+                            <span>📊</span> 导出 Excel (.csv)
+                        </button>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <h2 class="text-base font-bold text-gray-700 mb-3">📝 食物库管理</h2>
+                    <div class="bg-blue-50 p-2 rounded-lg border border-blue-100 space-y-2 mb-3">
+                        <input v-model="newFood.name" placeholder="食物名称" class="w-full text-sm p-1.5 border border-white rounded focus:outline-none">
+                        <div class="grid grid-cols-3 gap-1">
+                            <input type="number" v-model="newFood.protein" placeholder="蛋白g" class="w-full text-xs p-1.5 border border-white rounded focus:outline-none text-center">
+                            <input type="number" v-model="newFood.carbs" placeholder="碳水g" class="w-full text-xs p-1.5 border border-white rounded focus:outline-none text-center">
+                            <input type="number" v-model="newFood.fat" placeholder="脂肪g" class="w-full text-xs p-1.5 border border-white rounded focus:outline-none text-center">
+                        </div>
+                        <div class="flex gap-2">
+                            <select v-model="newFood.unit" class="w-1/2 text-xs p-1.5 border border-white rounded focus:outline-none">
+                                <option value="100g">每 100 克</option>
+                                <option value="1个">每 1 个</option>
+                            </select>
+                            <button @click="addNewFood" class="w-1/2 bg-blue-500 text-white text-xs font-bold rounded active:bg-blue-600">添加</button>
+                        </div>
+                    </div>
+                    <div class="max-h-48 overflow-y-auto space-y-1 pr-1">
+                        <div v-for="(f, fname) in foods" :key="fname" class="flex justify-between items-center bg-gray-50 p-2 rounded border border-gray-100">
+                            <div>
+                                <span class="font-bold text-gray-700 text-sm">{{ fname }}</span>
+                                <span class="text-gray-400 ml-1 text-xs">({{ f.unit }})</span>
+                                <div class="text-gray-500 mt-0.5 text-[10px]">P:{{f.protein}} C:{{f.carbs}} F:{{f.fat}}</div>
+                            </div>
+                            <button @click="deleteFood(fname)" class="text-red-400 text-lg font-bold px-2">&times;</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                    <h2 class="text-base font-bold text-gray-700 mb-3">🔄 营养反推食物</h2>
+                    <div class="space-y-2 text-sm">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-gray-600">需要补充:</span>
+                            <div class="flex gap-1">
+                                <input type="number" v-model="reverse.targetValue" class="border border-gray-200 p-1.5 rounded w-16 text-center text-xs focus:outline-none">
+                                <select v-model="reverse.nutrient" class="border border-gray-200 p-1.5 rounded w-16 text-xs focus:outline-none">
+                                    <option value="protein">蛋白</option>
+                                    <option value="carbs">碳水</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs text-gray-600">使用食物:</span>
+                            <select v-model="reverse.food" class="border border-gray-200 p-1.5 rounded flex-grow ml-2 text-xs focus:outline-none">
+                                <option v-for="(f, fname) in foods" :value="fname">{{ fname }}</option>
+                            </select>
+                        </div>
+                        <div class="mt-2 bg-gray-800 text-white p-2 rounded text-center text-sm font-bold" v-if="reverseResult">
+                            需摄入: <span class="text-green-400">{{ reverseResult }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 模态框：模板管理 -->
+        <transition name="modal">
+            <div v-if="showTemplateModal" class="fixed inset-0 z-50 flex flex-col bg-gray-100">
+                <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm pt-safe">
+                    <h2 class="text-lg font-bold text-gray-800">⚙️ 模板管理</h2>
+                    <button @click="showTemplateModal = false" class="text-blue-500 font-bold text-sm">完成</button>
+                </div>
+                <div class="p-3 overflow-y-auto flex-grow space-y-4">
+                    <div class="flex gap-2 bg-white p-3 rounded-lg shadow-sm">
+                        <input v-model="newTemplateName" placeholder="新模板名称" class="bg-gray-50 border border-gray-200 p-2 rounded flex-grow text-sm focus:outline-none">
+                        <button @click="createTemplate" class="bg-blue-500 text-white px-3 py-2 rounded text-sm font-bold whitespace-nowrap">+ 创建</button>
+                    </div>
+                    <div v-for="(tpl, tName) in templates" :key="tName" class="border border-gray-200 rounded-lg overflow-hidden shadow-sm bg-white">
+                        <div class="bg-gray-50 p-2 flex justify-between items-center border-b border-gray-200">
+                            <h3 class="font-bold text-blue-600 text-base">📌 {{ tName }}</h3>
+                            <button @click="deleteTemplate(tName)" class="text-red-400 text-xs font-bold">删除模板</button>
+                        </div>
+                        <div class="p-2 space-y-2">
+                            <div v-for="(meal, mIndex) in tpl.meals" :key="mIndex" class="flex flex-col gap-1 text-xs bg-gray-50 p-2 rounded border border-gray-200 relative">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <input v-model="meal.name" placeholder="餐次" class="border border-gray-300 p-1 rounded w-20 font-bold focus:outline-none" @change="saveData">
+                                    <button @click="removeMealFromTemplate(tName, mIndex)" class="absolute top-2 right-2 text-red-400 text-lg leading-none">&times;</button>
+                                </div>
+                                <div class="grid grid-cols-3 gap-1">
+                                    <div class="flex items-center bg-white border border-gray-200 rounded p-1"><span class="text-gray-400 w-4">P:</span><input type="number" v-model="meal.target.p" class="w-full bg-transparent text-center focus:outline-none" @change="saveData"></div>
+                                    <div class="flex items-center bg-white border border-gray-200 rounded p-1"><span class="text-gray-400 w-4">C:</span><input type="number" v-model="meal.target.c" class="w-full bg-transparent text-center focus:outline-none" @change="saveData"></div>
+                                    <div class="flex items-center bg-white border border-gray-200 rounded p-1"><span class="text-gray-400 w-4">F:</span><input type="number" v-model="meal.target.f" class="w-full bg-transparent text-center focus:outline-none" @change="saveData"></div>
+                                </div>
+                            </div>
+                            <button @click="addMealToTemplate(tName)" class="text-blue-500 text-xs font-bold w-full text-center py-1.5 border border-dashed border-blue-200 rounded mt-1">+ 增加一餐</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- 模态框：周报分析 -->
+        <transition name="modal">
+            <div v-if="showWeeklyModal" class="fixed inset-0 z-50 flex flex-col bg-gray-100">
+                <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm pt-safe">
+                    <h2 class="text-lg font-bold text-gray-800">📅 增肌数据周报</h2>
+                    <button @click="showWeeklyModal = false" class="text-blue-500 font-bold text-sm">关闭</button>
+                </div>
+                <div class="p-4 flex-grow overflow-y-auto space-y-4">
+                    
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-orange-100">
+                        <h3 class="text-orange-600 font-bold mb-3 flex items-center"><span class="mr-2">🔥</span> 过去 7 天日均摄入</h3>
+                        <div class="grid grid-cols-3 gap-2 mb-3">
+                            <div class="bg-gray-50 p-2 rounded border border-gray-100 text-center">
+                                <p class="text-[10px] text-gray-500">日均热量</p>
+                                <p class="text-base font-black text-gray-800">{{ weeklyData.current.cal }}</p>
+                            </div>
+                            <div class="bg-gray-50 p-2 rounded border border-gray-100 text-center">
+                                <p class="text-[10px] text-gray-500">周均体重</p>
+                                <p class="text-base font-black text-blue-600">{{ weeklyData.current.w }}</p>
+                            </div>
+                            <div class="bg-orange-50 p-2 rounded border border-orange-200 text-center">
+                                <p class="text-[10px] text-orange-600 font-bold">训练天数</p>
+                                <p class="text-base font-black text-orange-600">{{ weeklyData.current.trainDays }} <span class="text-[10px] font-normal text-orange-500">天</span></p>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                            <div class="bg-blue-50 text-blue-700 p-2 rounded font-bold">P: {{ weeklyData.current.p }}g</div>
+                            <div class="bg-green-50 text-green-700 p-2 rounded font-bold">C: {{ weeklyData.current.c }}g</div>
+                            <div class="bg-yellow-50 text-yellow-700 p-2 rounded font-bold">F: {{ weeklyData.current.f }}g</div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+                        <h3 class="text-gray-600 font-bold mb-3 flex items-center"><span class="mr-2">⏮️</span> 上一周期 (第8-14天前)</h3>
+                        <div class="grid grid-cols-3 gap-3 text-center">
+                            <div class="p-2">
+                                <p class="text-xs text-gray-500">上周期热量</p>
+                                <p class="text-sm font-bold text-gray-700">{{ weeklyData.past.cal }}</p>
+                            </div>
+                            <div class="p-2 border-l border-gray-100">
+                                <p class="text-xs text-gray-500">上周期均重</p>
+                                <p class="text-sm font-bold text-gray-700">{{ weeklyData.past.w }}</p>
+                            </div>
+                            <div class="p-2 border-l border-gray-100">
+                                <p class="text-xs text-gray-500">上周期训练</p>
+                                <p class="text-sm font-bold text-gray-700">{{ weeklyData.past.trainDays }} 天</p>
+                            </div>
+                        </div>
+                        <div class="mt-2 p-3 bg-gray-50 rounded border border-gray-100 text-sm">
+                            <span class="text-gray-600 font-bold">体重环比变化：</span>
+                            <span :class="weightTrendColor" class="font-black text-lg ml-2">{{ weightTrendValue }}</span>
+                        </div>
+                        <p class="text-[10px] text-gray-400 mt-2 text-center">增肌期建议每周体重增长不要超过 0.25 - 0.5kg，以避免过多脂肪囤积。</p>
+                    </div>
+
+                </div>
+            </div>
+        </transition>
+
+        <!-- 模态框：可视化图表 -->
+        <transition name="modal">
+            <div v-if="showChartModal" class="fixed inset-0 z-50 flex flex-col bg-gray-50">
+                <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-white shadow-sm pt-safe">
+                    <div>
+                        <h2 class="text-lg font-bold text-gray-800">📈 体重趋势</h2>
+                        <p class="text-[10px] text-gray-400 mt-0.5">每日体重 + 7日移动平均，更容易看真实趋势</p>
+                    </div>
+                    <button @click="closeChart" class="text-gray-500 font-bold text-sm">关闭</button>
+                </div>
+                <div class="p-3 overflow-y-auto flex-grow space-y-3">
+                    <div class="grid grid-cols-3 gap-2">
+                        <div class="bg-white rounded-xl p-3 border border-gray-200 shadow-sm text-center">
+                            <div class="text-[10px] text-gray-500">近7日均重</div>
+                            <div class="text-lg font-black text-blue-600 mt-0.5">{{ weightChartStats.currentAvg }}</div>
+                        </div>
+                        <div class="bg-white rounded-xl p-3 border border-gray-200 shadow-sm text-center">
+                            <div class="text-[10px] text-gray-500">上一7日均重</div>
+                            <div class="text-lg font-black text-gray-700 mt-0.5">{{ weightChartStats.previousAvg }}</div>
+                        </div>
+                        <div class="bg-white rounded-xl p-3 border border-gray-200 shadow-sm text-center">
+                            <div class="text-[10px] text-gray-500">7日变化</div>
+                            <div class="text-lg font-black mt-0.5" :class="weightChartStats.deltaClass">{{ weightChartStats.delta }}</div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-2">
+                        <div class="flex items-center justify-between px-2 pt-1 pb-2">
+                            <div class="text-xs font-bold text-gray-700">体重走势</div>
+                            <div class="text-[10px] text-gray-400">● 每日体重　━ 7日平均</div>
+                        </div>
+                        <div class="relative h-[58vh] min-h-[320px]">
+                            <canvas id="trendChart"></canvas>
+                        </div>
+                    </div>
+
+                    <div class="bg-indigo-50 border border-indigo-100 rounded-xl p-3 text-xs text-indigo-700">
+                        {{ weightChartStats.tip }}
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- 模态框：转移空缺营养素 -->
+        <transition name="modal">
+            <div v-if="showGapTransferModal" class="fixed inset-0 z-[56] flex flex-col justify-center items-center bg-black bg-opacity-40 p-4">
+                <div class="bg-white rounded-xl w-full max-w-sm overflow-hidden shadow-xl">
+                    <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                        <h2 class="text-base font-bold text-gray-800">↔️ 转移未完成的 P / C 空缺</h2>
+                        <button @click="showGapTransferModal = false" class="text-gray-500 font-bold text-xl leading-none">&times;</button>
+                    </div>
+                    <div class="p-4 space-y-4">
+                        <div class="text-sm text-gray-600">
+                            从 <span class="font-bold text-orange-600">{{ currentLog.meals[gapTransferData.sourceIndex]?.name }}</span>
+                            把本餐还没有吃完的 P / C 空缺，分配给另一餐。
+                            <div class="text-[10px] text-gray-400 mt-1">原餐会减少已转出的空缺额度，接收餐会增加对应额度；例如原来 4/6，转出 2g 后显示 4/4，接收餐原来 2/6 则显示 2/8。</div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button @click="selectGapTransferNutrient('p')" :class="gapTransferData.nutrient === 'p' ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-blue-700 border-blue-200'" class="border rounded-lg p-2.5 text-center shadow-sm">
+                                <div class="text-xs font-bold">转 P 空缺</div><div class="text-sm font-black mt-0.5">可转 {{ gapTransferData.p }}g</div>
+                            </button>
+                            <button @click="selectGapTransferNutrient('c')" :class="gapTransferData.nutrient === 'c' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-green-700 border-green-200'" class="border rounded-lg p-2.5 text-center shadow-sm">
+                                <div class="text-xs font-bold">转 C 空缺</div><div class="text-sm font-black mt-0.5">可转 {{ gapTransferData.c }}g</div>
+                            </button>
+                        </div>
+                        <button @click="selectGapTransferNutrient('all')" :class="gapTransferData.nutrient === 'all' ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-indigo-50 text-indigo-700 border-indigo-200'" class="w-full border rounded-lg p-2.5 text-sm font-bold shadow-sm">
+                            ✅ P + C 全部空缺转移 <span class="font-normal ml-1">（P {{ gapTransferData.p }}g / C {{ gapTransferData.c }}g）</span>
+                        </button>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-bold text-gray-700 whitespace-nowrap">转移至：</span>
+                            <select v-model="gapTransferData.targetIndex" class="border border-gray-300 p-2 rounded flex-grow text-sm focus:outline-none bg-white">
+                                <option value="" disabled>选择接收餐次...</option>
+                                <option v-for="(m, idx) in currentLog.meals" :value="idx" :disabled="idx === gapTransferData.sourceIndex">{{ m.name }}</option>
+                            </select>
+                        </div>
+                        <button @click="confirmGapTransfer" class="w-full bg-orange-500 text-white py-2.5 rounded-lg text-sm font-bold active:bg-orange-600 shadow-sm">确认转移空缺</button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- 模态框：转移超出营养素 -->
+        <transition name="modal">
+            <div v-if="showTransferModal" class="fixed inset-0 z-[55] flex flex-col justify-center items-center bg-black bg-opacity-40 p-4">
+                <div class="bg-white rounded-xl w-full max-w-sm overflow-hidden shadow-xl">
+                    <div class="p-4 border-b border-gray-200 flex justify-between items-center bg-gray-50">
+                        <h2 class="text-base font-bold text-gray-800">🔄 转移吃超出的 P / C</h2>
+                        <button @click="showTransferModal = false" class="text-gray-500 font-bold text-xl leading-none">&times;</button>
+                    </div>
+                    <div class="p-4 space-y-4">
+                        <div class="text-sm text-gray-600">
+                            从 <span class="font-bold text-blue-600">{{ currentLog.meals[transferData.sourceIndex]?.name }}</span>
+                            把本餐已经吃超出的克数，直接转给另一餐。
+                            <div class="text-[10px] text-gray-400 mt-1">原餐的有效实际会减少，接收餐的有效实际会增加；原始目标配额保持不变。</div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2">
+                            <button @click="selectTransferNutrient('p')" :class="transferData.nutrient === 'p' ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-blue-700 border-blue-200'" class="border rounded-lg p-2.5 text-center shadow-sm">
+                                <div class="text-xs font-bold">转 P</div><div class="text-sm font-black mt-0.5">可转 {{ transferData.p }}g</div>
+                            </button>
+                            <button @click="selectTransferNutrient('c')" :class="transferData.nutrient === 'c' ? 'bg-green-500 text-white border-green-500' : 'bg-white text-green-700 border-green-200'" class="border rounded-lg p-2.5 text-center shadow-sm">
+                                <div class="text-xs font-bold">转 C</div><div class="text-sm font-black mt-0.5">可转 {{ transferData.c }}g</div>
+                            </button>
+                        </div>
+                        <button @click="selectTransferNutrient('all')" :class="transferData.nutrient === 'all' ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-indigo-50 text-indigo-700 border-indigo-200'" class="w-full border rounded-lg p-2.5 text-sm font-bold shadow-sm">
+                            ✅ P + C 全部转移 <span class="font-normal ml-1">（P {{ transferData.p }}g / C {{ transferData.c }}g）</span>
+                        </button>
+                        <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-indigo-50 border border-indigo-100">
+                            <div class="text-[10px] text-indigo-700">优先推荐有同项缺口的餐次</div>
+                            <button @click="applyTransferRecommendation" class="text-xs font-bold bg-white text-indigo-600 border border-indigo-200 px-2 py-1 rounded-lg whitespace-nowrap">✨ 推荐接收餐</button>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-sm font-bold text-gray-700 whitespace-nowrap">转移至：</span>
+                            <select v-model="transferData.targetIndex" class="border border-gray-300 p-2 rounded flex-grow text-sm focus:outline-none bg-white">
+                                <option value="" disabled>选择接收餐次...</option>
+                                <option v-for="(m, idx) in currentLog.meals" :value="idx" :disabled="idx === transferData.sourceIndex">{{ m.name }}</option>
+                            </select>
+                        </div>
+                        <div class="bg-gray-50 border border-gray-100 rounded-lg p-2 text-xs text-gray-600">
+                            <div class="font-bold text-gray-700 mb-1">本次将转移：</div>
+                            <div v-if="transferData.nutrient === 'p'" class="text-blue-700">P：{{ transferData.p }}g</div>
+                            <div v-else-if="transferData.nutrient === 'c'" class="text-green-700">C：{{ transferData.c }}g</div>
+                            <div v-else><span class="text-blue-700">P：{{ transferData.p }}g</span><span class="mx-1">·</span><span class="text-green-700">C：{{ transferData.c }}g</span></div>
+                        </div>
+                        <button @click="confirmTransfer" class="w-full bg-blue-500 text-white py-2.5 rounded-lg text-sm font-bold active:bg-blue-600 shadow-sm">确认转移</button>
+                    </div>
+                </div>
+            </div>
+        </transition>
+
+        <!-- 提示框 -->
+        <transition name="modal">
+            <div v-if="alertMsg" class="fixed top-10 left-1/2 transform -translate-x-1/2 z-[60] bg-gray-800 text-white px-4 py-2 rounded shadow-lg text-sm whitespace-nowrap">
+                {{ alertMsg }}
+            </div>
+        </transition>
+
+    </div>
+
+    <script>
+        const { createApp, nextTick } = Vue;
+        let trendChartInstance = null;
+
+        const DEFAULT_TEMPLATES = {
+            "训练日": { meals: [{ name: "早饭", target: { p: 0, c: 0, f: 0 }, items: [] },{ name: "午饭", target: { p: 0, c: 0, f: 0 }, items: [] },{ name: "练前餐", target: { p: 0, c: 0, f: 0 }, items: [] },{ name: "练后餐", target: { p: 0, c: 0, f: 0 }, items: [] },{ name: "零食/夜宵", target: { p: 0, c: 0, f: 0 }, items: [] }] },
+            "非训练日": { meals: [{ name: "早饭", target: { p: 30, c: 40, f: 15 }, items: [] },{ name: "午饭", target: { p: 40, c: 50, f: 20 }, items: [] },{ name: "晚饭", target: { p: 40, c: 40, f: 15 }, items: [] }] }
+        };
+
+        const TRAINING_SCHEDULES = {
+            "早饭后练（早起版）": {
+                desc: "早饭作练前(轻食)；午饭吃原早餐配额，晚饭吃原其他餐配额。",
+                slots: [
+                    { source: 'breakfast', name: '早饭', role: 'pre', roleText: '练前餐', cRatio: 0.15, pRatio: 0.00 },
+                    { source: 'post', name: '练后餐', role: 'post', roleText: '练后餐', cRatio: 0.35, pRatio: 0.30 },
+                    { source: 'lunch', name: '午饭', role: 'other', roleText: '其他餐', cRatio: 0.20, pRatio: 0.20 },
+                    { source: 'dinner', name: '晚饭', role: 'other', roleText: '其他餐', cRatio: 0.20, pRatio: 0.30 },
+                    { source: 'snack', name: '零食/夜宵', role: 'snack', roleText: '零食/夜宵', cRatio: 0.10, pRatio: 0.20 }
+                ]
+            },
+            "早饭后练（晚起版）": {
+                desc: "少一餐；原练前配额(15%C)均分给三顿正餐。",
+                slots: [
+                    { source: 'breakfast', name: '早饭', role: 'pre', roleText: '练前餐', cRatio: 0.25, pRatio: 0.20 },
+                    { source: 'lunch', name: '午饭', role: 'post', roleText: '练后餐', cRatio: 0.40, pRatio: 0.30 },
+                    { source: 'dinner', name: '晚饭', role: 'other', roleText: '其他餐', cRatio: 0.25, pRatio: 0.30 },
+                    { source: 'snack', name: '零食/夜宵', role: 'snack', roleText: '零食/夜宵', cRatio: 0.10, pRatio: 0.20 }
+                ]
+            },
+            "午饭前练": {
+                desc: "严格按图表原始顺序。早饭-练前-练后-其他-零食。",
+                slots: [
+                    { source: 'breakfast', name: '早饭', role: 'breakfast', roleText: '早餐', cRatio: 0.20, pRatio: 0.20 },
+                    { source: 'pre', name: '练前餐', role: 'pre', roleText: '练前餐', cRatio: 0.15, pRatio: 0.00 },
+                    { source: 'lunch', name: '午饭', role: 'post', roleText: '练后餐', cRatio: 0.35, pRatio: 0.30 },
+                    { source: 'dinner', name: '晚饭', role: 'other', roleText: '其他餐', cRatio: 0.20, pRatio: 0.30 },
+                    { source: 'snack', name: '零食/夜宵', role: 'snack', roleText: '零食/夜宵', cRatio: 0.10, pRatio: 0.20 }
+                ]
+            },
+            "午饭后练": {
+                desc: "午饭作练前(轻食)；晚饭吃原其他餐配额。",
+                slots: [
+                    { source: 'breakfast', name: '早饭', role: 'breakfast', roleText: '早餐', cRatio: 0.20, pRatio: 0.20 },
+                    { source: 'lunch', name: '午饭', role: 'pre', roleText: '练前餐', cRatio: 0.15, pRatio: 0.00 },
+                    { source: 'post', name: '练后餐', role: 'post', roleText: '练后餐', cRatio: 0.35, pRatio: 0.30 },
+                    { source: 'dinner', name: '晚饭', role: 'other', roleText: '其他餐', cRatio: 0.20, pRatio: 0.30 },
+                    { source: 'snack', name: '零食/夜宵', role: 'snack', roleText: '零食/夜宵', cRatio: 0.10, pRatio: 0.20 }
+                ]
+            },
+            "晚饭前练": {
+                desc: "严格按图表顺序，晚饭直接作练后餐。",
+                slots: [
+                    { source: 'breakfast', name: '早饭', role: 'breakfast', roleText: '早餐', cRatio: 0.20, pRatio: 0.20 },
+                    { source: 'lunch', name: '午饭', role: 'other', roleText: '其他餐', cRatio: 0.20, pRatio: 0.30 },
+                    { source: 'pre', name: '练前餐', role: 'pre', roleText: '练前餐', cRatio: 0.15, pRatio: 0.00 },
+                    { source: 'dinner', name: '晚饭', role: 'post', roleText: '练后餐', cRatio: 0.35, pRatio: 0.30 },
+                    { source: 'snack', name: '零食/夜宵', role: 'snack', roleText: '零食/夜宵', cRatio: 0.10, pRatio: 0.20 }
+                ]
+            },
+            "晚饭后练": {
+                desc: "晚饭作练前(轻食)；训后加一顿练后餐。",
+                slots: [
+                    { source: 'breakfast', name: '早饭', role: 'breakfast', roleText: '早餐', cRatio: 0.20, pRatio: 0.20 },
+                    { source: 'lunch', name: '午饭', role: 'other', roleText: '其他餐', cRatio: 0.20, pRatio: 0.30 },
+                    { source: 'dinner', name: '晚饭', role: 'pre', roleText: '练前餐', cRatio: 0.15, pRatio: 0.00 },
+                    { source: 'post', name: '练后餐', role: 'post', roleText: '练后餐', cRatio: 0.35, pRatio: 0.30 },
+                    { source: 'snack', name: '零食/夜宵', role: 'snack', roleText: '零食/夜宵', cRatio: 0.10, pRatio: 0.20 }
+                ]
+            },
+            "晚饭后更晚练": {
+                desc: "无独立练前；前三餐均摊，练后餐稍大。",
+                slots: [
+                    { source: 'breakfast', name: '早饭', role: 'other', roleText: '其他餐', cRatio: 0.20, pRatio: 0.20 },
+                    { source: 'lunch', name: '午饭', role: 'other', roleText: '其他餐', cRatio: 0.20, pRatio: 0.20 },
+                    { source: 'dinner', name: '晚饭', role: 'other', roleText: '其他餐', cRatio: 0.20, pRatio: 0.20 },
+                    { source: 'post', name: '练后餐', role: 'post', roleText: '练后餐', cRatio: 0.30, pRatio: 0.20 },
+                    { source: 'snack', name: '零食/夜宵', role: 'snack', roleText: '零食/夜宵', cRatio: 0.10, pRatio: 0.20 }
+                ]
+            }
+        };
+
+        createApp({
+            data() {
+                const tzOffset = (new Date()).getTimezoneOffset() * 60000;
+                const today = (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
+                return {
+                    currentDate: today,
+                    showChartModal: false,
+                    showTemplateModal: false,
+                    showWeeklyModal: false,
+                    showTransferModal: false,
+                    showGapTransferModal: false,
+                    transferData: { sourceIndex: null, targetIndex: '', nutrient: 'all', p: 0, c: 0 },
+                    gapTransferData: { sourceIndex: null, targetIndex: '', nutrient: 'all', p: 0, c: 0 },
+                    alertMsg: '',
+                    newTemplateName: '',
+                    logs: JSON.parse(localStorage.getItem('diet_logs_max')) || {},
+                    foods: JSON.parse(localStorage.getItem('diet_foods_max')) || {},
+                    templates: JSON.parse(localStorage.getItem('diet_templates_max')) || DEFAULT_TEMPLATES,
+                    targets: JSON.parse(localStorage.getItem('diet_targets_max')) || { protein: 140, carbs: 300, fat: 60, calories: 2500 },
+                    labels: { protein: 'P(g)', carbs: 'C(g)', fat: 'F(g)', calories: 'Kcal' },
+                    trainingSchedules: TRAINING_SCHEDULES,
+                    newFood: { name: '', protein: null, carbs: null, fat: null, unit: '100g' },
+                    reverse: { targetValue: 30, nutrient: 'protein', food: '' },
+                    weeklyData: { current: { w: '--', p: 0, c: 0, f: 0, cal: 0, trainDays: 0 }, past: { w: '--', cal: 0, trainDays: 0 } }
+                }
+            },
+            computed: {
+                isTrainingDay() {
+                    return !!(this.currentLog.templateName && this.currentLog.templateName.includes('训') && !this.currentLog.templateName.includes('非'));
+                },
+                currentLog() {
+                    if (!this.logs[this.currentDate]) {
+                        let defaultWeight = 68.0;
+                        const dates = Object.keys(this.logs).sort();
+                        if (dates.length > 0) { const lastDate = dates[dates.length - 1]; if (this.logs[lastDate].weight) defaultWeight = this.logs[lastDate].weight; }
+                        this.logs[this.currentDate] = { weight: defaultWeight, templateName: '', trainingSchedule: '午饭前练', meals: [] };
+                    }
+                    if (!this.logs[this.currentDate].trainingSchedule && this.logs[this.currentDate].templateName && this.logs[this.currentDate].templateName.includes('训') && !this.logs[this.currentDate].templateName.includes('非')) {
+                        this.logs[this.currentDate].trainingSchedule = '午饭前练';
+                    }
+                    return this.logs[this.currentDate];
+                },
+                dailyTotal() {
+                    let total = { protein: 0, carbs: 0, fat: 0, calories: 0 };
+                    this.currentLog.meals.forEach(meal => { const m = this.getMealTotals(meal); total.protein += m.p; total.carbs += m.c; total.fat += m.f; });
+                    total.calories = (total.protein * 4) + (total.carbs * 4) + (total.fat * 9);
+                    return total;
+                },
+                dailyStatusCards() {
+                    const make = (key, label, actual, target, bg, text) => {
+                        const safeTarget = Number(target) || 0;
+                        const safeActual = Number(actual) || 0;
+                        const percent = safeTarget > 0 ? Math.round((safeActual / safeTarget) * 100) : 0;
+                        return { key, label, actual: safeActual, target: safeTarget, percent, remaining: Math.max(0, safeTarget - safeActual), bg, text };
+                    };
+                    return [
+                        make('p', '蛋白质 P', this.dailyTotal.protein, this.targets.protein, 'bg-blue-50 border-blue-100', 'text-blue-700'),
+                        make('c', '碳水 C', this.dailyTotal.carbs, this.targets.carbs, 'bg-green-50 border-green-100', 'text-green-700'),
+                        make('f', '脂肪 F', this.dailyTotal.fat, this.targets.fat, 'bg-yellow-50 border-yellow-100', 'text-yellow-700')
+                    ];
+                },
+                dailyStatusSummary() {
+                    const p = this.dailyTotal.protein >= Number(this.targets.protein || 0);
+                    const c = this.dailyTotal.carbs >= Number(this.targets.carbs || 0);
+                    const f = this.dailyTotal.fat >= Number(this.targets.fat || 0);
+                    if (p && c && f) return '✅ 今天三项都达到当前目标。';
+                    if (p && c) return '✅ P / C 已达标，F 继续按你的安排即可。';
+                    const missing = [];
+                    if (!p) missing.push(`P 还差 ${Math.max(0, Number(this.targets.protein || 0) - this.dailyTotal.protein).toFixed(1)}g`);
+                    if (!c) missing.push(`C 还差 ${Math.max(0, Number(this.targets.carbs || 0) - this.dailyTotal.carbs).toFixed(1)}g`);
+                    if (!f) missing.push(`F 还差 ${Math.max(0, Number(this.targets.fat || 0) - this.dailyTotal.fat).toFixed(1)}g`);
+                    return `今日还需补：${missing.join('、')}`;
+                },
+                dailyStatusSummaryClass() {
+                    const p = this.dailyTotal.protein >= Number(this.targets.protein || 0);
+                    const c = this.dailyTotal.carbs >= Number(this.targets.carbs || 0);
+                    return (p && c) ? 'text-green-700' : 'text-gray-700';
+                },
+                weightChartStats() {
+                    const dates = Object.keys(this.logs).sort();
+                    const values = dates.map(d => Number(this.logs[d]?.weight)).filter(v => Number.isFinite(v) && v > 0);
+                    const cur = values.slice(-7);
+                    const prev = values.slice(-14, -7);
+                    const avg = arr => arr.length ? arr.reduce((a,b) => a+b, 0) / arr.length : null;
+                    const ca = avg(cur), pa = avg(prev);
+                    const delta = (ca !== null && pa !== null) ? ca - pa : null;
+                    const deltaText = delta === null ? '--' : `${delta >= 0 ? '+' : ''}${delta.toFixed(2)} kg`;
+                    let tip = '体重数据积累越多，7日平均线越有参考价值。';
+                    if (delta !== null) {
+                        tip = delta > 0 ? '最近7日平均体重高于上一周期，先结合一周趋势观察，不用被单日波动影响。' : (delta < 0 ? '最近7日平均体重低于上一周期，可以继续观察趋势变化。' : '最近7日平均体重基本持平，说明近期体重比较稳定。');
+                    }
+                    return {
+                        currentAvg: ca === null ? '--' : `${ca.toFixed(2)} kg`,
+                        previousAvg: pa === null ? '--' : `${pa.toFixed(2)} kg`,
+                        delta: deltaText,
+                        deltaClass: delta === null ? 'text-gray-500' : (delta > 0 ? 'text-green-600' : (delta < 0 ? 'text-orange-600' : 'text-blue-600')),
+                        tip
+                    };
+                },
+                reverseResult() {
+                    if (!this.reverse.food) return "请选择食物";
+                    const food = this.foods[this.reverse.food];
+                    if (!food || !food[this.reverse.nutrient] || food[this.reverse.nutrient] === 0) return "营养素为0";
+                    const multiplier = this.reverse.targetValue / food[this.reverse.nutrient];
+                    return `${(multiplier * (food.unit === '1个' ? 1 : 100)).toFixed(1)} ${food.unit === '1个' ? '个' : '克'}`;
+                },
+                weightTrendValue() {
+                    if(this.weeklyData.current.w === '--' || this.weeklyData.past.w === '--') return '-- kg';
+                    const diff = parseFloat(this.weeklyData.current.w) - parseFloat(this.weeklyData.past.w);
+                    return diff > 0 ? `+${diff.toFixed(2)} kg` : `${diff.toFixed(2)} kg`;
+                },
+                weightTrendColor() {
+                    if(this.weeklyData.current.w === '--' || this.weeklyData.past.w === '--') return 'text-gray-500';
+                    const diff = parseFloat(this.weeklyData.current.w) - parseFloat(this.weeklyData.past.w);
+                    return diff > 0.5 ? 'text-red-500' : (diff > 0 ? 'text-green-500' : 'text-blue-500');
+                }
+            },
+            watch: { currentDate() { this.saveData(); } },
+            methods: {
+                showAlert(msg) { this.alertMsg = msg; setTimeout(() => { this.alertMsg = ''; }, 2000); },
+                
+                saveData() {
+                    localStorage.setItem('diet_logs_max', JSON.stringify(this.logs)); localStorage.setItem('diet_foods_max', JSON.stringify(this.foods));
+                    localStorage.setItem('diet_templates_max', JSON.stringify(this.templates)); localStorage.setItem('diet_targets_max', JSON.stringify(this.targets));
+                },
+                progressBarColor(val, target) {
+                    if (!target || target === 0) return 'bg-gray-300';
+                    const ratio = val / target; return ratio < 0.8 ? 'bg-blue-500' : (ratio <= 1.05 ? 'bg-green-500' : 'bg-red-500');
+                },
+                
+                createTemplate() {
+                    if (!this.newTemplateName) return this.showAlert('请输入模板名称');
+                    if (this.templates[this.newTemplateName]) return this.showAlert('模板已存在');
+                    this.templates[this.newTemplateName] = { meals: [] }; this.newTemplateName = ''; this.saveData();
+                },
+                deleteTemplate(name) { if(confirm(`删除模板 [${name}]？`)) { delete this.templates[name]; this.saveData(); } },
+                addMealToTemplate(tName) { this.templates[tName].meals.push({ name: '新餐次', target: { p: 0, c: 0, f: 0 }, items: [] }); this.saveData(); },
+                removeMealFromTemplate(tName, index) { this.templates[tName].meals.splice(index, 1); this.saveData(); },
+                applyTemplate(tName) {
+                    if (this.currentLog.meals.length > 0 && !confirm(`应用会清空今日现有餐次，继续吗？`)) return;
+                    const templateData = JSON.parse(JSON.stringify(this.templates[tName]));
+                    this.currentLog.meals = templateData.meals;
+                    this.currentLog.templateName = tName;
+                    let sumP = 0, sumC = 0, sumF = 0;
+                    templateData.meals.forEach(m => { sumP += m.target.p||0; sumC += m.target.c||0; sumF += m.target.f||0; });
+                    this.targets = { protein: sumP, carbs: sumC, fat: sumF, calories: (sumP*4 + sumC*4 + sumF*9) };
+                    if (this.isTrainingDay) {
+                        this.currentLog.trainingSchedule = this.currentLog.trainingSchedule || '午饭前练';
+                        this.applyTrainingSchedule(false);
+                    }
+                    this.saveData();
+                },
+                
+                copyYesterday() {
+                    if (this.currentLog.meals.length > 0 && !confirm(`这会覆盖今日现有的餐次记录，确认复制吗？`)) return;
+                    const dates = Object.keys(this.logs).sort();
+                    let prevDate = null;
+                    for (let i = dates.length - 1; i >= 0; i--) {
+                        if (dates[i] < this.currentDate && this.logs[dates[i]].meals.length > 0) {
+                            prevDate = dates[i];
+                            break;
+                        }
+                    }
+                    if (!prevDate) return this.showAlert('没有找到近期的饮食记录！');
+
+                    const prevLog = JSON.parse(JSON.stringify(this.logs[prevDate]));
+                    this.currentLog.meals = prevLog.meals;
+                    this.currentLog.templateName = prevLog.templateName || '复制记录';
+                    this.currentLog.trainingSchedule = prevLog.trainingSchedule || (this.isTrainingDay ? '午饭前练' : '午饭前练');
+                    
+                    let sumP = 0, sumC = 0, sumF = 0;
+                    prevLog.meals.forEach(m => { sumP += m.target.p||0; sumC += m.target.c||0; sumF += m.target.f||0; });
+                    this.targets = { protein: sumP, carbs: sumC, fat: sumF, calories: (sumP*4 + sumC*4 + sumF*9) };
+                    
+                    this.saveData();
+                    this.showAlert(`✅ 已成功复制 ${prevDate} 的记录！`);
+                },
+
+                mealSourceKey(meal) {
+                    if (meal && meal.source) return meal.source;
+                    const n = String(meal?.name || '');
+                    if (n.includes('早') || n.includes('早餐')) return 'breakfast';
+                    if (n.includes('午')) return 'lunch';
+                    if (n.includes('晚')) return 'dinner';
+                    if (n.includes('练前')) return 'pre';
+                    if (n.includes('练后')) return 'post';
+                    if (n.includes('零食') || n.includes('夜宵') || n.includes('加餐')) return 'snack';
+                    if (n.includes('其他')) return 'other';
+                    return 'extra';
+                },
+
+                roundTarget(v) { return parseFloat((Number(v) || 0).toFixed(1)); },
+
+                allocateScheduleTargets(slots) {
+                    const totals = {
+                        p: parseFloat(this.targets.protein || 0),
+                        c: parseFloat(this.targets.carbs || 0)
+                    };
+                    ['p','c'].forEach(k => {
+                        let used = 0;
+                        slots.forEach((slot, idx) => {
+                            const ratio = k === 'p' ? Number(slot.pRatio || 0) : Number(slot.cRatio || 0);
+                            slot.target = slot.target || {};
+                            if (idx === slots.length - 1) {
+                                slot.target[k] = this.roundTarget(Math.max(0, totals[k] - used));
+                            } else {
+                                const value = this.roundTarget(Math.max(0, totals[k] * ratio));
+                                slot.target[k] = value;
+                                used += value;
+                            }
+                        });
+                    });
+                },
+
+                applyTrainingSchedule(showMessage = true) {
+                    if (!this.isTrainingDay) return;
+                    if (Array.isArray(this.currentLog.transfers) && this.currentLog.transfers.length) this.currentLog.transfers = [];
+                    const key = this.currentLog.trainingSchedule || '午饭前练';
+                    const cfg = this.trainingSchedules[key] || this.trainingSchedules['午饭前练'];
+                    this.currentLog.trainingSchedule = key;
+
+                    const pool = {};
+                    (this.currentLog.meals || []).forEach(meal => {
+                        const src = this.mealSourceKey(meal);
+                        if (!pool[src]) pool[src] = [];
+                        pool[src].push(meal);
+                    });
+                    const take = (src) => {
+                        if (pool[src] && pool[src].length) return pool[src].shift();
+                        return null;
+                    };
+                    const blankMeal = (source) => ({ source, name: '', target: {p:0,c:0,f:0}, items: [] });
+                    const mergeItems = (to, from) => {
+                        if (!from) return;
+                        to.items = Array.isArray(to.items) ? to.items : [];
+                        if (Array.isArray(from.items) && from.items.length) to.items.push(...from.items);
+                    };
+
+                    const hasSource = src => cfg.slots.some(s => s.source === src);
+                    const meals = [];
+                    cfg.slots.forEach(slot => {
+                        let meal = take(slot.source);
+                        if (!meal && slot.source === 'breakfast') meal = take('other');
+                        if (!meal && slot.source === 'lunch') meal = take('other');
+                        if (!meal && slot.source === 'dinner') meal = take('other');
+                        if (!meal && slot.source === 'post') meal = take('extra');
+                        if (!meal && slot.source === 'pre') meal = take('extra');
+                        if (!meal && slot.source === 'snack') meal = take('extra');
+                        if (!meal) meal = blankMeal(slot.source);
+                        meal.source = slot.source;
+                        meal.name = slot.name;
+                        meal.role = slot.role;
+                        meal.roleText = slot.roleText;
+                        meal.target = meal.target || {p:0,c:0,f:0};
+                        meals.push(meal);
+                    });
+
+                    const targetBySource = src => meals.find(m => m.source === src);
+                    if (!hasSource('pre') && pool.pre?.length) mergeItems(targetBySource('breakfast') || targetBySource('dinner') || meals[0], pool.pre.shift());
+                    if (!hasSource('post') && pool.post?.length) mergeItems(targetBySource('lunch') || targetBySource('dinner') || meals[0], pool.post.shift());
+                    if (!hasSource('snack') && pool.snack?.length) mergeItems(meals[meals.length - 1], pool.snack.shift());
+                    
+                    Object.values(pool).flat().forEach(extra => mergeItems(meals[meals.length - 1], extra));
+
+                    this.allocateScheduleTargets(cfg.slots);
+                    cfg.slots.forEach((slot, idx) => {
+                        const oldFat = parseFloat(meals[idx].target?.f || 0);
+                        meals[idx].target = { p: slot.target.p, c: slot.target.c, f: oldFat };
+                    });
+                    this.currentLog.meals = meals;
+                    this.saveData();
+                    if (showMessage) this.showAlert(`✅ 已切换为：${key}`);
+                },
+
+                changeTrainingSchedule() {
+                    this.applyTrainingSchedule(true);
+                },
+
+                addMeal() { this.currentLog.meals.push({ name: `第${this.currentLog.meals.length + 1}餐`, target: {p:0,c:0,f:0}, items: [] }); this.saveData(); },
+                removeMeal(index) { if(confirm('删除此餐？')) { this.currentLog.meals.splice(index, 1); this.saveData(); } },
+                addFood(mealIndex) {
+                    const keys = Object.keys(this.foods); if (keys.length === 0) return this.showAlert('请先在下方添加食物库！');
+                    this.currentLog.meals[mealIndex].items.push({ type: 'normal', food: keys[0], amount: '' }); this.saveData();
+                },
+                addQuickFood(mealIndex) {
+                    this.currentLog.meals[mealIndex].items.push({ type: 'quick', name: '', p: '', c: '', f: '' });
+                    this.saveData();
+                },
+                removeFood(mealIndex, foodIndex) { this.currentLog.meals[mealIndex].items.splice(foodIndex, 1); this.saveData(); },
+                
+                addNewFood() {
+                    if (!this.newFood.name) return this.showAlert('请输入食物名');
+                    this.foods[this.newFood.name] = { protein: parseFloat(this.newFood.protein || 0), carbs: parseFloat(this.newFood.carbs || 0), fat: parseFloat(this.newFood.fat || 0), unit: this.newFood.unit };
+                    this.saveData(); this.newFood = { name: '', protein: null, carbs: null, fat: null, unit: '100g' };
+                },
+                deleteFood(name) { if(confirm(`删除食物 [${name}]？`)) { delete this.foods[name]; this.saveData(); } },
+                getTransferLedger() {
+                    if (!this.currentLog.transfers) this.currentLog.transfers = [];
+                    return this.currentLog.transfers;
+                },
+                getTransferKind(t) {
+                    return t && t.kind === 'gap' ? 'gap' : 'surplus';
+                },
+                transferNet(mealIndex, nutrient) {
+                    let inboundSurplus = 0, inboundGap = 0, outboundSurplus = 0, outboundGap = 0;
+                    this.getTransferLedger().forEach(t => {
+                        const value = Number(t[nutrient] || 0);
+                        const kind = this.getTransferKind(t);
+                        if (Number(t.to) === Number(mealIndex)) {
+                            if (kind === 'gap') inboundGap += value;
+                            else inboundSurplus += value;
+                        }
+                        if (Number(t.from) === Number(mealIndex)) {
+                            if (kind === 'gap') outboundGap += value;
+                            else outboundSurplus += value;
+                        }
+                    });
+                    return {
+                        inboundSurplus,
+                        inboundGap,
+                        outboundSurplus,
+                        outboundGap,
+                        inbound: inboundSurplus + inboundGap,
+                        outbound: outboundSurplus + outboundGap
+                    };
+                },
+                getMealDisplayActual(mealIndex, nutrient) {
+                    const meal = this.currentLog.meals[mealIndex];
+                    if (!meal) return 0;
+                    const actual = Number(this.getMealTotals(meal)[nutrient] || 0);
+                    const net = this.transferNet(mealIndex, nutrient);
+                    return Math.max(0, actual + net.inboundSurplus - net.outboundSurplus);
+                },
+                getMealDisplayTarget(mealIndex, nutrient) {
+                    const meal = this.currentLog.meals[mealIndex];
+                    if (!meal) return 0;
+                    const target = Number(meal.target?.[nutrient] || 0);
+                    const net = this.transferNet(mealIndex, nutrient);
+                    return this.roundTarget(Math.max(0, target + net.inboundGap - net.outboundGap));
+                },
+                getMealRemaining(mealIndex, nutrient) {
+                    const meal = this.currentLog.meals[mealIndex];
+                    if (!meal) return 0;
+                    const actual = this.getMealDisplayActual(mealIndex, nutrient);
+                    const displayTarget = this.getMealDisplayTarget(mealIndex, nutrient);
+                    return displayTarget - actual;
+                },
+                getTransferableSurplus(mealIndex, nutrient) {
+                    const meal = this.currentLog.meals[mealIndex];
+                    if (!meal) return 0;
+                    const actual = this.getMealDisplayActual(mealIndex, nutrient);
+                    const target = this.getMealDisplayTarget(mealIndex, nutrient);
+                    return Math.max(0, actual - target);
+                },
+                getTransferableGap(mealIndex, nutrient) {
+                    const meal = this.currentLog.meals[mealIndex];
+                    if (!meal) return 0;
+                    const actual = this.getMealDisplayActual(mealIndex, nutrient);
+                    const target = this.getMealDisplayTarget(mealIndex, nutrient);
+                    return Math.max(0, target - actual);
+                },
+                mealMacroStatusText(mealIndex, nutrient) {
+                    const remain = this.getMealRemaining(mealIndex, nutrient);
+                    const surplus = this.getTransferableSurplus(mealIndex, nutrient);
+                    const net = this.transferNet(mealIndex, nutrient);
+                    let text = '';
+                    if (surplus >= 0.05) text = `超出 ${surplus.toFixed(1)}g`;
+                    else if (remain > 0.05) text = `还差 ${remain.toFixed(1)}g`;
+                    else text = '已达标';
+                    if (net.outbound > 0.05) text += ` · 已转出 ${net.outbound.toFixed(1)}g`;
+                    if (net.inbound > 0.05) text += ` · 已转入 ${net.inbound.toFixed(1)}g`;
+                    return text;
+                },
+                mealMacroStatusClass(mealIndex, nutrient) {
+                    const remain = this.getMealRemaining(mealIndex, nutrient);
+                    const surplus = this.getTransferableSurplus(mealIndex, nutrient);
+                    if (surplus >= 0.05) return 'text-red-500';
+                    if (remain > 0.05) return 'text-orange-500';
+                    return 'text-green-600';
+                },
+
+                getMealTotals(meal) {
+                    let p = 0, c = 0, f = 0;
+                    meal.items.forEach(item => {
+                        if (!item.type || item.type === 'normal') {
+                            const food = this.foods[item.food];
+                            if (food && item.amount) { 
+                                p += food.protein * parseFloat(item.amount); 
+                                c += food.carbs * parseFloat(item.amount); 
+                                f += food.fat * parseFloat(item.amount); 
+                            }
+                        } else if (item.type === 'quick') {
+                            p += parseFloat(item.p || 0);
+                            c += parseFloat(item.c || 0);
+                            f += parseFloat(item.f || 0);
+                        }
+                    });
+                    return { p, c, f, cal: p*4 + c*4 + f*9 };
+                },
+                getFoodMacros(item) {
+                    if (!item.type || item.type === 'normal') {
+                        const f = this.foods[item.food]; if(!f || !item.amount) return 'P:0 C:0 F:0';
+                        const p = (f.protein * item.amount), c = (f.carbs * item.amount), fat = (f.fat * item.amount);
+                        return `P:${p.toFixed(1)} C:${c.toFixed(1)} F:${fat.toFixed(1)} | ${(p*4+c*4+fat*9).toFixed(0)}kcal`;
+                    } else if (item.type === 'quick') {
+                        const p = parseFloat(item.p || 0), c = parseFloat(item.c || 0), fat = parseFloat(item.f || 0);
+                        return `P:${p.toFixed(1)} C:${c.toFixed(1)} F:${fat.toFixed(1)} | ${(p*4+c*4+fat*9).toFixed(0)}kcal`;
+                    }
+                },
+
+                openTransfer(mIndex) {
+                    const overP = this.getTransferableSurplus(mIndex, 'p');
+                    const overC = this.getTransferableSurplus(mIndex, 'c');
+                    if (overP < 0.05 && overC < 0.05) return this.showAlert('该餐次目前没有可转移的 P / C 超出部分。');
+                    this.transferData = { sourceIndex: mIndex, targetIndex: '', nutrient: 'all', p: this.roundTarget(overP), c: this.roundTarget(overC) };
+                    this.showTransferModal = true;
+                },
+
+                openGapTransfer(mIndex) {
+                    const gapP = this.getTransferableGap(mIndex, 'p');
+                    const gapC = this.getTransferableGap(mIndex, 'c');
+                    if (gapP < 0.05 && gapC < 0.05) return this.showAlert('该餐次目前没有可转移的 P / C 空缺。');
+                    this.gapTransferData = { sourceIndex: mIndex, targetIndex: '', nutrient: 'all', p: this.roundTarget(gapP), c: this.roundTarget(gapC) };
+                    this.showGapTransferModal = true;
+                },
+                selectGapTransferNutrient(type) { this.gapTransferData.nutrient = type; },
+                confirmGapTransfer() {
+                    if (this.gapTransferData.targetIndex === '' || Number(this.gapTransferData.targetIndex) === Number(this.gapTransferData.sourceIndex)) return this.showAlert('请选择一个有效的接收餐次');
+                    const srcIndex = Number(this.gapTransferData.sourceIndex);
+                    const destIndex = Number(this.gapTransferData.targetIndex);
+                    const nutrient = this.gapTransferData.nutrient;
+                    const move = { p: 0, c: 0 };
+                    if (nutrient === 'p') move.p = this.getTransferableGap(srcIndex, 'p');
+                    else if (nutrient === 'c') move.c = this.getTransferableGap(srcIndex, 'c');
+                    else {
+                        move.p = this.getTransferableGap(srcIndex, 'p');
+                        move.c = this.getTransferableGap(srcIndex, 'c');
+                    }
+                    move.p = this.roundTarget(move.p);
+                    move.c = this.roundTarget(move.c);
+                    if (move.p < 0.05 && move.c < 0.05) return this.showAlert('当前没有可转移的 P / C 空缺。');
+                    this.getTransferLedger().push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2), from: srcIndex, to: destIndex, p: move.p, c: move.c, kind: 'gap', createdAt: new Date().toISOString() });
+                    this.saveData();
+                    this.showGapTransferModal = false;
+                    const nutrientText = nutrient === 'p' ? `P ${move.p}g` : (nutrient === 'c' ? `C ${move.c}g` : `P ${move.p}g / C ${move.c}g`);
+                    this.showAlert(`✅ 已把 ${nutrientText} 空缺转到 ${this.currentLog.meals[destIndex].name}，原配额没有变化！`);
+                },
+
+                selectTransferNutrient(type) { this.transferData.nutrient = type; },
+
+                getTransferRecommendation() {
+                    const srcIndex = Number(this.transferData.sourceIndex);
+                    if (!Number.isInteger(srcIndex)) return null;
+                    const nutrient = this.transferData.nutrient;
+                    const nutrients = nutrient === 'all' ? ['p','c'] : [nutrient];
+                    const candidates = this.currentLog.meals.map((meal, idx) => {
+                        if (idx === srcIndex) return null;
+                        let score = 0;
+                        nutrients.forEach(k => { score += Math.max(0, this.getMealRemaining(idx, k)); });
+                        return { idx, name: meal.name, score };
+                    }).filter(Boolean);
+                    candidates.sort((a,b) => b.score - a.score);
+                    return candidates[0] && candidates[0].score > 0 ? candidates[0] : null;
+                },
+
+                applyTransferRecommendation() {
+                    const rec = this.getTransferRecommendation();
+                    if (!rec) return this.showAlert('目前没有明显缺口的接收餐次。');
+                    this.transferData.targetIndex = String(rec.idx);
+                    this.showAlert(`✅ 已推荐转移到：${rec.name}`);
+                },
+
+                confirmTransfer() {
+                    if (this.transferData.targetIndex === '' || Number(this.transferData.targetIndex) === Number(this.transferData.sourceIndex)) return this.showAlert('请选择一个有效的接收餐次');
+                    const srcIndex = Number(this.transferData.sourceIndex);
+                    const destIndex = Number(this.transferData.targetIndex);
+                    const nutrient = this.transferData.nutrient;
+                    const move = { p: 0, c: 0 };
+                    if (nutrient === 'p') move.p = this.getTransferableSurplus(srcIndex, 'p');
+                    else if (nutrient === 'c') move.c = this.getTransferableSurplus(srcIndex, 'c');
+                    else {
+                        move.p = this.getTransferableSurplus(srcIndex, 'p');
+                        move.c = this.getTransferableSurplus(srcIndex, 'c');
+                    }
+                    move.p = this.roundTarget(move.p);
+                    move.c = this.roundTarget(move.c);
+                    if (move.p < 0.05 && move.c < 0.05) return this.showAlert('当前没有可转移的 P / C 超出部分。');
+
+                    this.getTransferLedger().push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2), from: srcIndex, to: destIndex, p: move.p, c: move.c, kind: 'surplus', createdAt: new Date().toISOString() });
+                    this.saveData();
+                    this.showTransferModal = false;
+                    const nutrientText = nutrient === 'p' ? `P ${move.p}g` : (nutrient === 'c' ? `C ${move.c}g` : `P ${move.p}g / C ${move.c}g`);
+                    this.showAlert(`✅ 已把 ${nutrientText} 转到 ${this.currentLog.meals[destIndex].name}，原配额没有变化！`);
+                },
+
+                undoLastTransfer() {
+                    const ledger = this.getTransferLedger();
+                    if (!ledger.length) return this.showAlert('今天还没有转移记录。');
+                    ledger.pop();
+                    this.saveData();
+                    this.showAlert('↩️ 已撤销最近一次转移。');
+                },
+
+                // 周报逻辑
+                openWeeklyReport() {
+                    const datesDesc = Object.keys(this.logs).sort((a,b) => new Date(b) - new Date(a));
+                    const currentDates = datesDesc.slice(0, 7);
+                    const pastDates = datesDesc.slice(7, 14);
+
+                    const calc = (datesArr) => {
+                        let wSum=0, wCount=0, pSum=0, cSum=0, fSum=0, calSum=0, trainCount=0;
+                        datesArr.forEach(d => {
+                            const log = this.logs[d];
+                            if(log.weight) { wSum += parseFloat(log.weight); wCount++; }
+                            if(log.templateName && log.templateName.includes('训') && !log.templateName.includes('非')) {
+                                trainCount++;
+                            }
+                            
+                            log.meals.forEach(meal => {
+                                const m = this.getMealTotals(meal);
+                                pSum+=m.p; cSum+=m.c; fSum+=m.f; calSum+=m.cal;
+                            });
+                        });
+                        const days = datesArr.length || 1;
+                        return {
+                            w: wCount > 0 ? (wSum/wCount).toFixed(2) : '--',
+                            p: (pSum/days).toFixed(0),
+                            c: (cSum/days).toFixed(0),
+                            f: (fSum/days).toFixed(0),
+                            cal: (calSum/days).toFixed(0),
+                            trainDays: trainCount
+                        };
+                    };
+                    this.weeklyData = { current: calc(currentDates), past: calc(pastDates) };
+                    this.showWeeklyModal = true;
+                },
+
+                async copyDataToClipboard() {
+                    const data = { logs: this.logs, foods: this.foods, templates: this.templates, targets: this.targets };
+                    const jsonStr = JSON.stringify(data);
+                    const compressed = LZString.compressToBase64(jsonStr);
+                    const finalStr = "【DIET_MAX_V2】" + compressed;
+                    try {
+                        if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(finalStr); this.showAlert("✅ 压缩代码已复制！"); }
+                        else {
+                            let textArea = document.createElement("textarea"); textArea.value = finalStr; textArea.style.position = "fixed"; document.body.appendChild(textArea);
+                            textArea.focus(); textArea.select(); document.execCommand('copy'); textArea.remove(); this.showAlert("✅ 压缩代码已复制！");
+                        }
+                    } catch (err) { this.showAlert("❌ 复制失败。"); }
+                },
+                async importFromClipboard() {
+                    try {
+                        let text = "";
+                        if (navigator.clipboard && navigator.clipboard.readText) { text = await navigator.clipboard.readText(); } else { text = prompt("粘贴备份代码："); }
+                        if (!text) return;
+                        let jsonStr = "";
+                        if (text.startsWith("【DIET_MAX_V2】")) { jsonStr = LZString.decompressFromBase64(text.replace("【DIET_MAX_V2】", "")); }
+                        else if (text.startsWith("【DIET_MAX_DATA_V1】")) { jsonStr = text.replace("【DIET_MAX_DATA_V1】", ""); }
+                        else return this.showAlert("❌ 格式错误");
+                        
+                        const data = JSON.parse(jsonStr);
+                        if (data.logs) this.logs = data.logs; if (data.foods) this.foods = data.foods; if (data.templates) this.templates = data.templates; if (data.targets) this.targets = data.targets;
+                        this.saveData(); this.showAlert("✅ 恢复成功！");
+                    } catch (err) { this.showAlert("❌ 解析失败，代码损坏"); }
+                },
+
+                forceDownload(content, filename, mimeType) {
+                    const blob = new Blob([content], { type: mimeType }); const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a'); a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+                    setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
+                },
+                mobileExportCSV() {
+                    let csv = "\uFEFF日期,体重(kg),模式,餐次,目标蛋白(g),目标碳水(g),目标脂肪(g),实际蛋白(g),实际碳水(g),实际脂肪(g),总热量(kcal)\n";
+                    Object.keys(this.logs).sort().forEach(date => {
+                        const log = this.logs[date];
+                        log.meals.forEach(meal => {
+                            const act = this.getMealTotals(meal);
+                            csv += `${date},${log.weight||''},${log.templateName||'无'},${meal.name},${meal.target.p||0},${meal.target.c||0},${meal.target.f||0},${act.p.toFixed(1)},${act.c.toFixed(1)},${act.f.toFixed(1)},${act.cal.toFixed(0)}\n`;
+                        });
+                    });
+                    this.forceDownload(csv, `Diet_Export_${this.currentDate}.csv`, "text/csv;charset=utf-8;");
+                },
+
+                openChart() { this.showChartModal = true; nextTick(() => { this.renderChart(); }); },
+                closeChart() { this.showChartModal = false; if (trendChartInstance) { trendChartInstance.destroy(); trendChartInstance = null; } },
+                renderChart() {
+                    const canvas = document.getElementById('trendChart');
+                    if (!canvas) return;
+                    const ctx = canvas.getContext('2d');
+                    if (trendChartInstance) trendChartInstance.destroy();
+
+                    const allDates = Object.keys(this.logs).sort();
+                    const raw = allDates.map(date => {
+                        const w = Number(this.logs[date]?.weight);
+                        return Number.isFinite(w) && w > 0 ? w : null;
+                    });
+                    const moving = raw.map((_, i) => {
+                        const values = raw.slice(Math.max(0, i - 6), i + 1).filter(v => v !== null);
+                        return values.length ? Number((values.reduce((a,b) => a+b, 0) / values.length).toFixed(2)) : null;
+                    });
+                    const labels = allDates.map(d => d.substring(5));
+                    const valid = raw.filter(v => v !== null);
+                    let minW = valid.length ? Math.min(...valid) : 60;
+                    let maxW = valid.length ? Math.max(...valid) : 75;
+                    const pad = Math.max(0.5, (maxW - minW) * 0.25);
+                    minW = Math.floor((minW - pad) * 10) / 10;
+                    maxW = Math.ceil((maxW + pad) * 10) / 10;
+
+                    trendChartInstance = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels,
+                            datasets: [
+                                {
+                                    label: '每日体重',
+                                    data: raw,
+                                    borderWidth: 1.5,
+                                    pointRadius: 3,
+                                    pointHoverRadius: 5,
+                                    tension: 0.18,
+                                    spanGaps: true
+                                },
+                                {
+                                    label: '7日平均',
+                                    data: moving,
+                                    borderWidth: 3,
+                                    pointRadius: 0,
+                                    pointHoverRadius: 3,
+                                    tension: 0.25,
+                                    spanGaps: true
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            interaction: { mode: 'index', intersect: false },
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    callbacks: {
+                                        label: ctx => `${ctx.dataset.label}：${ctx.parsed.y?.toFixed(2) ?? '--'} kg`
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: { ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } },
+                                y: { min: minW, max: maxW, ticks: { callback: value => `${value}kg` }, grid: { drawBorder: false } }
+                            }
+                        }
+                    });
+                }
+            },
+            mounted() {
+                this.saveData();
+                if ('serviceWorker' in navigator) {
+                    navigator.serviceWorker.register('./sw.js?v=8').then(() => console.log('PWA Ready'));
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
